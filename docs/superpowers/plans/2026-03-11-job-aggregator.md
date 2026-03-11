@@ -672,10 +672,12 @@ def build_rss_urls(sources: dict, markets: list[str], keyword: str) -> list[tupl
             "104", "tw"
         ))
     wellfound_markets = [m for m in markets if m in ("tw", "sg")]
+    wellfound_locations = ["new-york", "san-francisco", "los-angeles", "remote"]
     if sources.get("wellfound") and wellfound_markets:
+        loc_params = "&".join(f"locations[]={loc}" for loc in wellfound_locations)
         for market in wellfound_markets:
             results.append((
-                f"https://wellfound.com/jobs.rss?keywords={kw}",
+                f"https://wellfound.com/jobs.rss?keywords={kw}&{loc_params}",
                 "wellfound", market
             ))
     if sources.get("indeed_rss"):

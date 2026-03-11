@@ -29,7 +29,7 @@ Manually checking multiple job platforms and company websites is time-consuming 
 | LinkedIn | Gmail alert (OAuth) | TW, JP, SG |
 | Indeed | Gmail alert + RSS (tw/jp/sg.indeed.com) | TW, JP, SG |
 | 104 | RSS feed | TW |
-| Wellfound | RSS feed | TW, SG |
+| Wellfound | RSS feed | TW, SG (locations: NY, SF, LA, Remote) |
 | CakeResume | Web scraper | TW |
 | Yourator | Web scraper | TW |
 
