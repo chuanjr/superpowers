@@ -162,11 +162,9 @@ async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Se
         return results
 
 
-async def _scrape_yourator_one(keyword: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
+async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
     async with sem:
         results = []
-        kw = quote_plus(keyword)
-        url = f"https://www.yourator.co/search?s={kw}"
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
         try:
@@ -175,15 +173,15 @@ async def _scrape_yourator_one(keyword: str, browser: Browser, sem: asyncio.Sema
             if not selector:
                 items_via_links = await _extract_by_link_pattern(page, "/jobs/", "https://www.yourator.co")
                 if items_via_links:
-                    print(f"[DEBUG] Yourator '{keyword}': link-pattern fallback, {len(items_via_links)} items")
+                    print(f"[DEBUG] Yourator '{label}': link-pattern fallback, {len(items_via_links)} items")
                     for r in items_via_links[:20]:
                         results.append(normalize_yourator_item(
                             {"job_title": r.get("title"), "company_name": r.get("company"), "job_url": r.get("url")},
                             market="tw"
                         ))
                 else:
-                    print(f"[DEBUG] Yourator '{keyword}': {await page.title()!r} — no selector matched")
-                    await _dump_html(page, f"yourator_{keyword}")
+                    print(f"[DEBUG] Yourator '{label}': {await page.title()!r} — no selector matched")
+                    await _dump_html(page, f"yourator_{label}")
                 return results
 
             items = await page.query_selector_all(selector)
@@ -204,10 +202,16 @@ async def _scrape_yourator_one(keyword: str, browser: Browser, sem: asyncio.Sema
                         {"job_title": title, "company_name": company, "job_url": full_url}, market="tw"
                     ))
         except Exception as e:
-            print(f"[WARN] Yourator '{keyword}': {e}")
+            print(f"[WARN] Yourator '{label}': {e}")
         finally:
             await context.close()
         return results
+
+
+async def _scrape_yourator_one(keyword: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
+    kw = quote_plus(keyword)
+    url = f"https://www.yourator.co/search?s={kw}"
+    return await _scrape_yourator_page(url, keyword, browser, sem)
 
 
 async def _scrape_all(sources: dict, titles: list[str]) -> list[dict]:
@@ -224,10 +228,14 @@ async def _scrape_all(sources: dict, titles: list[str]) -> list[dict]:
             yourator_sem = asyncio.Semaphore(_CONCURRENCY)
             tasks = []
 
+            yourator_url = sources.get("yourator_url") if isinstance(sources, dict) else None
+            if "yourator" in browsers and yourator_url:
+                tasks.append(_scrape_yourator_page(yourator_url, "configured_url", browsers["yourator"], yourator_sem))
+
             for title in titles:
                 if "cake" in browsers:
                     tasks.append(_scrape_cakeresume_one(title, browsers["cake"], cake_sem))
-                if "yourator" in browsers:
+                if "yourator" in browsers and not yourator_url:
                     tasks.append(_scrape_yourator_one(title, browsers["yourator"], yourator_sem))
 
             batches = await asyncio.gather(*tasks, return_exceptions=True)
