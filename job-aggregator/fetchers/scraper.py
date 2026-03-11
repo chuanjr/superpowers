@@ -160,7 +160,7 @@ async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Se
     async with sem:
         results = []
         kw = quote_plus(keyword)
-        url = f"https://www.cake.me/jobs/{kw}"
+        url = f"https://www.cake.me/jobs/{kw}?locale=en&refinementList%5Blocation_list_downcase%5D=%E5%8F%B0%E7%81%A3"
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
         try:
@@ -171,6 +171,12 @@ async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Se
             if keyword not in _cake_dumped:
                 _cake_dumped.add(keyword)
                 await _dump_html(page, f"cakeresume_{kw}")
+            # If the page shows empty results, bail early — don't fall back to
+            # link-pattern extraction which picks up footer/nav company names
+            empty = await page.query_selector("[class*='EmptyResults']")
+            if empty:
+                print(f"[DEBUG] CakeResume '{keyword}': empty results page, skipping")
+                return results
             selector = await _wait_for_any(page, _CAKE_SELECTORS)
             if not selector:
                 items_via_links = await _extract_by_link_pattern(page, "/jobs/", "https://www.cake.me", min_path_depth=3)
