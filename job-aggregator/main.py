@@ -2,6 +2,7 @@
 """Daily job aggregator — run via cron."""
 import os
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date
 from pathlib import Path
 
@@ -19,6 +20,18 @@ from deduplicator import deduplicate, remove_seen
 from matcher import Matcher
 from enricher import Enricher
 from notifier import build_email_html, build_subject
+
+
+def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str]) -> list[dict]:
+    raw = []
+    for msg in gmail.fetch_alert_messages(sources, days_back=1):
+        html = extract_html_body(msg)
+        headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
+        sender = headers.get("From", "")
+        source = "linkedin" if "linkedin" in sender else "indeed"
+        market = next((m for m in markets if m in headers.get("Subject", "").lower()), markets[0])
+        raw.extend(parse_gmail_message(html, source=source, market=market))
+    return raw
 
 
 def main():
@@ -40,30 +53,21 @@ def main():
     titles = targets["titles"]
     notif = cfg["notification"]
 
-    # 2. Fetch
-    raw_entries = []
+    # 2. Fetch all sources concurrently
+    print("[1/6] Fetching all sources in parallel (Gmail / RSS / Scraper)...")
     gmail = GmailFetcher()
-
-    print("[1/6] Fetching Gmail alerts...")
-    for msg in gmail.fetch_alert_messages(sources, days_back=1):
-        html = extract_html_body(msg)
-        # Determine source from sender header
-        headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
-        sender = headers.get("From", "")
-        source = "linkedin" if "linkedin" in sender else "indeed"
-        market = next((m for m in markets if m in headers.get("Subject", "").lower()), markets[0])
-        raw_entries.extend(parse_gmail_message(html, source=source, market=market))
-
-    print("[2/6] Fetching RSS feeds...")
     rss = RSSFetcher()
-    raw_entries.extend(rss.fetch_all(sources, markets, titles))
-
-    print("[3/6] Scraping CakeResume / Yourator...")
     scraper = WebScraper()
-    raw_entries.extend(scraper.fetch_all(sources, titles))
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        gmail_fut = pool.submit(_fetch_gmail, gmail, sources, markets)
+        rss_fut = pool.submit(rss.fetch_all, sources, markets, titles)
+        scraper_fut = pool.submit(scraper.fetch_all, sources, titles)
+
+    raw_entries = gmail_fut.result() + rss_fut.result() + scraper_fut.result()
 
     # 3. Parse
-    print("[4/6] Parsing and normalizing...")
+    print("[2/6] Parsing and normalizing...")
     jobs = parse_all(raw_entries)
 
     # 4. Deduplicate (cross-platform + cross-day)
@@ -72,16 +76,17 @@ def main():
     jobs = remove_seen(jobs, seen_ids)
 
     # 5. Filter
-    print(f"[5/6] Filtering {len(jobs)} new jobs with Claude Haiku...")
+    print(f"[3/6] Filtering {len(jobs)} new jobs with Claude Haiku (parallel)...")
     matcher = Matcher()
     jobs = matcher.filter(jobs, targets)
 
     # 6. Enrich
+    print(f"[4/6] Enriching {len(jobs)} matched jobs (parallel)...")
     enricher = Enricher()
     jobs = enricher.enrich(jobs)
 
     # 7. Send email
-    print(f"[6/6] Sending digest ({len(jobs)} matches)...")
+    print(f"[5/6] Sending digest ({len(jobs)} matches)...")
     today = date.today()
     subject = build_subject(jobs, today)
     html = build_email_html(jobs, today)

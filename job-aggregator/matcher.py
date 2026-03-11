@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from anthropic import Anthropic
 from models import Job
 
@@ -45,4 +46,8 @@ class Matcher:
             return False
 
     def filter(self, jobs: list[Job], targets: dict) -> list[Job]:
-        return [job for job in jobs if self._evaluate(job, targets)]
+        if not jobs:
+            return []
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            keep = list(pool.map(lambda job: self._evaluate(job, targets), jobs))
+        return [job for job, ok in zip(jobs, keep) if ok]

@@ -1,3 +1,4 @@
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote_plus
 import feedparser
 
@@ -43,17 +44,29 @@ def parse_feed_entries(feed, source: str, market: str) -> list[dict]:
             "description": entry.get("summary", ""),
             "source": source,
             "market": market,
-            "company": "",  # extracted by parser from description
+            "company": "",
             "location": "",
         })
     return entries
 
 
+def _fetch_one(args: tuple) -> list[dict]:
+    url, source, market = args
+    try:
+        feed = feedparser.parse(url)
+        return parse_feed_entries(feed, source, market)
+    except Exception as e:
+        print(f"[WARN] RSS fetch failed ({source}/{market}): {e}")
+        return []
+
+
 class RSSFetcher:
     def fetch_all(self, sources: dict, markets: list[str], titles: list[str]) -> list[dict]:
-        raw = []
+        all_urls = []
         for title in titles:
-            for url, source, market in build_rss_urls(sources, markets, title):
-                feed = feedparser.parse(url)
-                raw.extend(parse_feed_entries(feed, source, market))
-        return raw
+            all_urls.extend(build_rss_urls(sources, markets, title))
+
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            batches = pool.map(_fetch_one, all_urls)
+
+        return [item for batch in batches for item in batch]

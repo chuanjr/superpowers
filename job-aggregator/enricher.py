@@ -1,4 +1,5 @@
 import json
+from concurrent.futures import ThreadPoolExecutor
 from anthropic import Anthropic
 from models import Job
 
@@ -33,14 +34,14 @@ class Enricher:
         except (json.JSONDecodeError, KeyError, IndexError):
             return None, None
 
+    def _enrich_one(self, job: Job) -> Job:
+        if "wellfound" in job.sources and job.industry is not None:
+            return job
+        job.industry, job.stage = self._infer(job)
+        return job
+
     def enrich(self, jobs: list[Job]) -> list[Job]:
-        enriched = []
-        for job in jobs:
-            if "wellfound" in job.sources and job.industry is not None:
-                enriched.append(job)
-                continue
-            industry, stage = self._infer(job)
-            job.industry = industry
-            job.stage = stage
-            enriched.append(job)
-        return enriched
+        if not jobs:
+            return []
+        with ThreadPoolExecutor(max_workers=10) as pool:
+            return list(pool.map(self._enrich_one, jobs))
