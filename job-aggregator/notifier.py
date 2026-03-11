@@ -4,31 +4,31 @@ from models import Job
 
 def build_subject(jobs: list[Job], run_date: date) -> str:
     if not jobs:
-        return f"[Job Digest] {run_date} — No new matches today"
+        return f"[職缺摘要] {run_date} — 今日無新職缺"
     by_market: dict[str, int] = {}
     for job in jobs:
         by_market[job.market] = by_market.get(job.market, 0) + 1
-    market_str = ", ".join(f"{m.upper()}: {c}" for m, c in sorted(by_market.items()))
-    return f"[Job Digest] {run_date} — {len(jobs)} new matches ({market_str})"
+    market_str = "、".join(f"{m.upper()} {c} 則" for m, c in sorted(by_market.items()))
+    return f"[職缺摘要] {run_date} — {len(jobs)} 則新職缺（{market_str}）"
 
 
 def build_email_html(jobs: list[Job], run_date: date) -> str:
     if not jobs:
-        return f"<p>No new matches today ({run_date}). The tool ran successfully.</p>"
+        return f"<p>今日無新職缺 ({run_date})。工具執行正常。</p>"
 
     rows = []
     for job in jobs:
         sources = ", ".join(job.sources)
         company_part = f"{job.company} · " if job.company else ""
         location_part = job.location if job.location else ""
-        meta_parts = [p for p in [location_part, f"Market: {job.market.upper()}"] if p]
+        meta_parts = [p for p in [location_part, f"市場：{job.market.upper()}"] if p]
         meta_str = " · ".join(meta_parts)
         rows.append(f"""
 <tr style="border-bottom:1px solid #eee">
   <td style="padding:12px 8px">
     <strong><a href="{job.url}" style="color:#1a73e8">{job.title}</a></strong><br>
     <span style="color:#555">{company_part}{meta_str}</span><br>
-    <small>Sources: {sources}</small>
+    <small>來源：{sources}</small>
   </td>
 </tr>""")
 
