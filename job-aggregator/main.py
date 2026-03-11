@@ -104,6 +104,11 @@ def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_ba
         jobs = parse_gmail_message(html, source=source, market=market)
         if DEBUG:
             print(f"[DEBUG] Gmail: {subject[:70]!r} → {len(jobs)} jobs (html={len(html)}B)")
+            if len(jobs) == 0 and "product manager" in subject.lower():
+                import pathlib
+                dump_path = pathlib.Path(f"/tmp/debug_gmail_{subject[:40].replace('/', '_').replace(' ', '_')}.html")
+                dump_path.write_text(html, encoding="utf-8")
+                print(f"[DEBUG]   → dumped HTML to {dump_path}")
         raw.extend(jobs)
     return raw
 
