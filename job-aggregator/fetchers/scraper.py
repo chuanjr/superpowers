@@ -175,6 +175,7 @@ async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Se
                 return results
 
             items = await page.query_selector_all(selector)
+            print(f"[DEBUG] CakeResume '{keyword}': selector={selector!r}, {len(items)} items found")
             for item in items[:20]:
                 title_el = await item.query_selector("h3, h2, [class*='title'], [class*='Title']")
                 company_el = await item.query_selector(
@@ -185,6 +186,9 @@ async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Se
                 company = (await company_el.inner_text() if company_el else "").strip()
                 href = await link_el.get_attribute("href") if link_el else ""
                 full_url = href if (not href or href.startswith("http")) else f"https://www.cake.me{href}"
+                raw_text = (await item.inner_text()).strip()[:60] if title_el is None else ""
+                href_short = href[:50]
+                print(f"[DEBUG] CakeResume item: title={title!r}(len={len(title)}) href={href_short!r} raw={raw_text!r}")
                 # Skip nav/UI items and titles that are clearly company names (no job keywords)
                 if title and len(title) >= 5 and title.lower() not in _UI_SKIP_LOWER:
                     results.append(normalize_cakeresume_item(
