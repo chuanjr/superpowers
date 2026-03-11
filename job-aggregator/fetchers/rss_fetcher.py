@@ -1,6 +1,8 @@
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote_plus
+import calendar
 import re
+import time
 import feedparser
 
 
@@ -42,6 +44,14 @@ def _clean_description(raw: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _parse_published(entry) -> str | None:
+    """Return ISO-8601 UTC string from feedparser's published_parsed / updated_parsed, or None."""
+    t = entry.get("published_parsed") or entry.get("updated_parsed")
+    if t:
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", t)
+    return None
+
+
 def parse_feed_entries(feed, source: str, market: str) -> list[dict]:
     entries = []
     for entry in feed.entries:
@@ -53,6 +63,7 @@ def parse_feed_entries(feed, source: str, market: str) -> list[dict]:
             "market": market,
             "company": entry.get("author", "").strip(),
             "location": "",
+            "posted_at": _parse_published(entry),
         })
     return entries
 

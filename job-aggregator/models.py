@@ -21,3 +21,4 @@ class Job:
     industry: Optional[str] = None
     stage: Optional[str] = None
     fetched_at: str = ""
+    posted_at: Optional[str] = None  # ISO-8601 UTC, from RSS published date

@@ -3,7 +3,7 @@
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from datetime import date
+from datetime import date, datetime, timezone, timedelta
 
 from dotenv import load_dotenv
 load_dotenv()
@@ -18,6 +18,23 @@ from parser import parse_all
 from deduplicator import deduplicate, remove_seen
 from notifier import build_email_html, build_subject
 from models import Job
+
+
+def _recency_filter(jobs: list[Job], hours: int = 24) -> list[Job]:
+    """Drop jobs with a known posted_at older than `hours` hours. Jobs with no
+    posted_at (scraped sources) are kept."""
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+    kept = []
+    for job in jobs:
+        if job.posted_at:
+            try:
+                posted = datetime.fromisoformat(job.posted_at.replace("Z", "+00:00"))
+                if posted < cutoff:
+                    continue
+            except ValueError:
+                pass
+        kept.append(job)
+    return kept
 
 
 def _rule_filter(jobs: list[Job], targets: dict) -> list[Job]:
@@ -85,10 +102,11 @@ def main():
     seen_ids = load_seen_ids()
     jobs = remove_seen(jobs, seen_ids)
 
-    # 5. Rule-based filter
+    # 5. Recency + rule-based filter
     before = len(jobs)
+    jobs = _recency_filter(jobs)
     jobs = _rule_filter(jobs, targets)
-    print(f"[3/4] Rule filter: {before} → {len(jobs)} jobs kept")
+    print(f"[3/4] Filter: {before} → {len(jobs)} jobs kept (24 h + title match)")
 
     # 6. Send email
     print(f"[4/4] Sending digest ({len(jobs)} matches)...")

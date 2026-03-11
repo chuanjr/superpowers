@@ -18,6 +18,7 @@ def parse_raw_entry(raw: dict) -> Optional[Job]:
         description=raw.get("description", ""),
         sources=[raw.get("source", "unknown")],
         fetched_at=datetime.now(timezone.utc).isoformat(),
+        posted_at=raw.get("posted_at"),
     )
 
 
