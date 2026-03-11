@@ -164,7 +164,9 @@ async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Se
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
         try:
-            await page.goto(url, timeout=30000, wait_until="networkidle")
+            await page.goto(url, timeout=45000, wait_until="domcontentloaded")
+            # Give JS framework time to render job listings
+            await page.wait_for_timeout(3000)
             # Dump HTML once so we can inspect actual page structure
             if keyword not in _cake_dumped:
                 _cake_dumped.add(keyword)
@@ -204,7 +206,8 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
         try:
-            await page.goto(url, timeout=30000, wait_until="networkidle")
+            await page.goto(url, timeout=45000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(3000)
             selector = await _wait_for_any(page, _YOURATOR_SELECTORS)
             if not selector:
                 items_via_links = await _extract_by_link_pattern(page, "/jobs/", "https://www.yourator.co")
