@@ -8,6 +8,12 @@ import feedparser
 
 INDEED_DOMAINS = {"tw": "tw.indeed.com", "jp": "jp.indeed.com", "sg": "sg.indeed.com"}
 
+_WELLFOUND_LOCATIONS: dict[str, list[str]] = {
+    "tw": ["taiwan", "taipei", "remote"],
+    "sg": ["singapore", "remote"],
+    "jp": ["japan", "tokyo", "remote"],
+}
+
 
 def build_rss_urls(sources: dict, markets: list[str], keyword: str) -> list[tuple[str, str, str]]:
     """Returns list of (url, source_name, market)."""
@@ -18,11 +24,11 @@ def build_rss_urls(sources: dict, markets: list[str], keyword: str) -> list[tupl
             f"https://www.104.com.tw/jobs/search/rss?keyword={kw}&jobsource=2018indexpoc",
             "104", "tw"
         ))
-    wellfound_markets = [m for m in markets if m in ("tw", "sg")]
-    wellfound_locations = ["new-york", "san-francisco", "los-angeles", "remote"]
+    wellfound_markets = [m for m in markets if m in _WELLFOUND_LOCATIONS]
     if sources.get("wellfound") and wellfound_markets:
-        loc_params = "&".join(f"locations[]={loc}" for loc in wellfound_locations)
         for market in wellfound_markets:
+            locs = _WELLFOUND_LOCATIONS[market]
+            loc_params = "&".join(f"locations[]={loc}" for loc in locs)
             results.append((
                 f"https://wellfound.com/jobs.rss?keywords={kw}&{loc_params}",
                 "wellfound", market

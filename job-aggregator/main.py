@@ -94,6 +94,27 @@ def _rule_filter(jobs: list[Job], targets: dict) -> list[Job]:
     return kept
 
 
+_MARKET_SUBJECT_KEYWORDS: dict[str, list[str]] = {
+    "tw": ["taiwan", "taipei", "台灣", "台北"],
+    "sg": ["singapore"],
+    "jp": ["japan", "tokyo", "日本", "東京"],
+}
+
+
+def _detect_market(sender: str, subject: str, markets: list[str]) -> str:
+    """Detect market from sender domain (Indeed) or subject keywords (LinkedIn)."""
+    sender_lower = sender.lower()
+    for market in markets:
+        if f"@{market}.indeed.com" in sender_lower:
+            return market
+    subject_lower = subject.lower()
+    for market in markets:
+        for kw in _MARKET_SUBJECT_KEYWORDS.get(market, []):
+            if kw in subject_lower:
+                return market
+    return markets[0]
+
+
 def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_back: int = 7) -> list[dict]:
     raw = []
     for msg in gmail.fetch_alert_messages(sources, days_back=days_back):
@@ -102,7 +123,7 @@ def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_ba
         sender = headers.get("From", "")
         subject = headers.get("Subject", "")
         source = "linkedin" if "linkedin" in sender else "indeed"
-        market = next((m for m in markets if m in subject.lower()), markets[0])
+        market = _detect_market(sender, subject, markets)
         is_pm_email = "product manager" in subject.lower() or "growth" in subject.lower()
         jobs = parse_gmail_message(html, source=source, market=market, debug=DEBUG and is_pm_email)
         if DEBUG:
