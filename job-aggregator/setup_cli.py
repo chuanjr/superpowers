@@ -73,6 +73,8 @@ def run_setup():
     email_to = prompt("Send digest to (email)", notif.get("to", ""))
     email_from = prompt("Send digest from (email)", notif.get("from", email_to))
 
+    days_back = int(prompt("Days back to search (e.g. 7)", str(existing.get("days_back", 7))))
+
     config = {
         "markets": markets,
         "targets": {
@@ -82,6 +84,7 @@ def run_setup():
         },
         "sources": sources,
         "notification": {"to": email_to, "from": email_from},
+        "days_back": days_back,
     }
 
     CONFIG_PATH.write_text(yaml.dump(config, allow_unicode=True, default_flow_style=False))

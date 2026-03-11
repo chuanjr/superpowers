@@ -85,6 +85,9 @@ async def _dump_html(page, name: str) -> None:
     print(f"[DEBUG] Saved rendered HTML to {path} for selector diagnosis")
 
 
+_ARTICLE_SUFFIXES = ("jobs", "roles", "positions", "openings", "opportunities", "careers")
+
+
 async def _extract_by_link_pattern(page, href_contains: str, base_url: str) -> list[dict]:
     links = await page.query_selector_all(f"a[href*='{href_contains}']")
     seen = set()
@@ -95,7 +98,10 @@ async def _extract_by_link_pattern(page, href_contains: str, base_url: str) -> l
             continue
         seen.add(href)
         text = (await link.inner_text()).strip()
-        if not text or len(text) < 3:
+        if not text or len(text) < 3 or len(text) > 100:
+            continue
+        # Skip category/navigation links like "Product Manager Jobs in Taiwan"
+        if text.lower().rstrip(".").endswith(_ARTICLE_SUFFIXES):
             continue
         full_url = href if href.startswith("http") else f"{base_url}{href}"
         parent = await link.evaluate_handle("el => el.closest('li, article, div[class]') || el.parentElement")

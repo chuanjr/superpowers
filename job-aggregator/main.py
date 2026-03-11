@@ -90,9 +90,9 @@ def _rule_filter(jobs: list[Job], targets: dict) -> list[Job]:
     return kept
 
 
-def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str]) -> list[dict]:
+def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_back: int = 7) -> list[dict]:
     raw = []
-    for msg in gmail.fetch_alert_messages(sources, days_back=1):
+    for msg in gmail.fetch_alert_messages(sources, days_back=days_back):
         html = extract_html_body(msg)
         headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
         sender = headers.get("From", "")
@@ -115,6 +115,7 @@ def main():
     targets = cfg["targets"]
     titles = targets["titles"]
     notif = cfg["notification"]
+    days_back = cfg.get("days_back", 7)
 
     # 2. Fetch all sources concurrently
     print("[1/4] Fetching all sources in parallel (Gmail / RSS / Scraper)...")
@@ -123,7 +124,7 @@ def main():
     scraper = WebScraper()
 
     with ThreadPoolExecutor(max_workers=3) as pool:
-        gmail_fut = pool.submit(_fetch_gmail, gmail, sources, markets)
+        gmail_fut = pool.submit(_fetch_gmail, gmail, sources, markets, days_back)
         rss_fut = pool.submit(rss.fetch_all, sources, markets, titles)
         scraper_fut = pool.submit(scraper.fetch_all, sources, titles)
 
@@ -144,10 +145,10 @@ def main():
 
     # 5. Recency + rule-based filter
     before = len(jobs)
-    jobs = _recency_filter(jobs)
+    jobs = _recency_filter(jobs, hours=days_back * 24)
     _dbg_jobs("after recency_filter", jobs)
     jobs = _rule_filter(jobs, targets)
-    print(f"[3/4] Filter: {before} → {len(jobs)} jobs kept (24 h + title match)")
+    print(f"[3/4] Filter: {before} → {len(jobs)} jobs kept ({days_back}d + title match)")
 
     # 6. Send email
     print(f"[4/4] Sending digest ({len(jobs)} matches)...")

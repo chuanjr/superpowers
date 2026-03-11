@@ -13,7 +13,7 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly",
 CREDENTIALS_DIR = Path("credentials")
 
 SENDER_MAP = {
-    "linkedin_gmail": "from:jobs-noreply@linkedin.com",
+    "linkedin_gmail": "from:(jobalert@linkedin.com OR jobs-noreply@linkedin.com OR notifications@linkedin.com)",
     "indeed_gmail": "from:(jobalert@indeed.com OR alert@sg.indeed.com OR alert@jp.indeed.com OR alert@tw.indeed.com)",
 }
 
