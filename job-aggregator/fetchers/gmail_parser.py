@@ -2,6 +2,22 @@
 from html.parser import HTMLParser
 import re
 
+_UI_EXACT = frozenset({
+    "view", "apply", "apply now", "see job", "see more jobs", "view job",
+    "see all jobs", "unsubscribe", "jobs similar to", "similar jobs",
+    "sign in", "log in",
+})
+_UI_PREFIX = ("jobs similar to", "similar to")
+
+
+def _is_ui_text(text: str) -> bool:
+    t = text.lower().strip()
+    if t in _UI_EXACT:
+        return True
+    if any(t.startswith(p) for p in _UI_PREFIX):
+        return True
+    return False
+
 
 class _LinkExtractor(HTMLParser):
     def __init__(self):
@@ -21,6 +37,8 @@ class _LinkExtractor(HTMLParser):
         href = self._current_href
         # LinkedIn: any link containing /jobs/view/ (href may include /comm/ prefix)
         if "/jobs/view/" in href and len(text) > 3:
+            if _is_ui_text(text):
+                return
             # Old format: "Backend Engineer at Stripe" in a single link text
             if " at " in text:
                 parts = text.split(" at ", 1)
@@ -30,7 +48,7 @@ class _LinkExtractor(HTMLParser):
                     "url": href,
                 })
             # New format: title-only link, company extracted separately later
-            elif text.lower() not in ("view", "apply", "see job", "see more jobs", "view job"):
+            else:
                 self.jobs.append({"title": text, "company": "", "url": href})
         # Indeed: links containing viewjob or /rc/clk with non-trivial text
         elif ("viewjob" in href or "/rc/clk" in href) and len(text) > 5:
