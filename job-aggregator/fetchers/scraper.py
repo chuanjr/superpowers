@@ -27,16 +27,30 @@ def normalize_yourator_item(raw: dict, market: str) -> dict:
     }
 
 
+_UA = (
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/123.0.0.0 Safari/537.36"
+)
+
+
 async def _scrape_cakeresume(keyword: str) -> list[dict]:
     results = []
     kw = quote_plus(keyword)
     url = f"https://www.cakeresume.com/jobs?q={kw}&locale=tw"
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        context = await browser.new_context(user_agent=_UA)
+        page = await context.new_page()
         await page.goto(url, timeout=30000, wait_until="networkidle")
         # Use partial class match to avoid brittle CSS-module hashes
-        await page.wait_for_selector("[class*='JobSearchResult_jobItem']", timeout=15000)
+        try:
+            await page.wait_for_selector("[class*='JobSearchResult_jobItem']", timeout=15000)
+        except Exception:
+            title_tag = await page.title()
+            print(f"[DEBUG] CakeResume page title: {title_tag!r} — selector not found, skipping")
+            await browser.close()
+            return results
         items = await page.query_selector_all("[class*='JobSearchResult_jobItem']")
         for item in items[:20]:
             title_el = await item.query_selector("h3")
@@ -60,7 +74,8 @@ async def _scrape_yourator(keyword: str) -> list[dict]:
     url = f"https://www.yourator.co/jobs?term={kw}"
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
-        page = await browser.new_page()
+        context = await browser.new_context(user_agent=_UA)
+        page = await context.new_page()
         await page.goto(url, timeout=30000, wait_until="networkidle")
         # Try multiple known selectors for Yourator job cards
         selector = None
@@ -72,6 +87,9 @@ async def _scrape_yourator(keyword: str) -> list[dict]:
             except Exception:
                 continue
         if not selector:
+            title_tag = await page.title()
+            print(f"[DEBUG] Yourator page title: {title_tag!r} — no selector matched, skipping")
+            await browser.close()
             return results
         items = await page.query_selector_all(selector)
         for item in items[:20]:
