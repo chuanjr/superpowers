@@ -1,6 +1,6 @@
 import asyncio
 from playwright.async_api import async_playwright, Browser
-from urllib.parse import quote_plus
+from urllib.parse import quote, quote_plus
 
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -12,9 +12,9 @@ _UA = (
 _CONCURRENCY = 3
 
 _CAKE_LOCATION = {
-    "tw": "%E5%8F%B0%E7%81%A3",  # 台灣
+    "tw": "Taipei City-Taiwan",
     "sg": "Singapore",
-    "jp": "Japan",
+    "jp": "Tokyo Metropolis-Japan",
 }
 
 _CAKE_SELECTORS = [
@@ -165,10 +165,10 @@ _cake_dumped: set[str] = set()
 async def _scrape_cakeresume_one(keyword: str, market: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
     async with sem:
         results = []
-        kw = quote_plus(keyword)
+        kw = quote(keyword)
         loc = _CAKE_LOCATION.get(market, "")
-        loc_param = f"&refinementList%5Blocation_list_downcase%5D={quote_plus(loc)}" if loc else ""
-        url = f"https://www.cake.me/jobs/{kw}?locale=en{loc_param}"
+        loc_param = f"locations={quote(loc)}&" if loc else ""
+        url = f"https://www.cake.me/jobs/{kw}?{loc_param}order=latest"
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
         try:
