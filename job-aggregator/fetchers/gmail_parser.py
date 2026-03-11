@@ -19,14 +19,19 @@ class _LinkExtractor(HTMLParser):
         if not text or not self._current_href:
             return
         href = self._current_href
-        # LinkedIn: links containing /jobs/view/ with "at CompanyName" pattern
-        if "/jobs/view/" in href and " at " in text:
-            parts = text.split(" at ", 1)
-            self.jobs.append({
-                "title": parts[0].strip(),
-                "company": parts[1].strip() if len(parts) > 1 else "",
-                "url": href,
-            })
+        # LinkedIn: any link containing /jobs/view/ (href may include /comm/ prefix)
+        if "/jobs/view/" in href and len(text) > 3:
+            # Old format: "Backend Engineer at Stripe" in a single link text
+            if " at " in text:
+                parts = text.split(" at ", 1)
+                self.jobs.append({
+                    "title": parts[0].strip(),
+                    "company": parts[1].strip() if len(parts) > 1 else "",
+                    "url": href,
+                })
+            # New format: title-only link, company extracted separately later
+            elif text.lower() not in ("view", "apply", "see job", "see more jobs", "view job"):
+                self.jobs.append({"title": text, "company": "", "url": href})
         # Indeed: links containing viewjob or /rc/clk with non-trivial text
         elif ("viewjob" in href or "/rc/clk" in href) and len(text) > 5:
             self.jobs.append({
