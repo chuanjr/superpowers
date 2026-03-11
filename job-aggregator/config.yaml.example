@@ -1,0 +1,26 @@
+markets:
+  - tw
+  - jp
+  - sg
+
+targets:
+  titles:
+    - "Backend Engineer"
+    - "Software Engineer"
+  experience_years: "3-5"
+  exclude_keywords:
+    - "outsourcing"
+    - "派遣"
+
+sources:
+  linkedin_gmail: true
+  indeed_gmail: true
+  indeed_rss: true
+  104: true
+  cakeresume: true
+  yourator: true
+  wellfound: true
+
+notification:
+  to: "your@email.com"
+  from: "your@email.com"

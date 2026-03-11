@@ -1,0 +1,8 @@
+credentials/client_secret.json
+credentials/token.json
+state.json
+config.yaml
+__pycache__/
+.pytest_cache/
+*.pyc
+.env
