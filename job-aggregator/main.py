@@ -48,11 +48,13 @@ def _recency_filter(jobs: list[Job], hours: int = 24) -> list[Job]:
 
 
 _ZH_EXPAND: dict[str, list[str]] = {
-    "product manager": ["產品經理", "產品主管"],
-    "pm":              ["產品經理", "產品主管"],
+    "product manager": ["產品經理", "產品主管", "プロダクトマネージャ", "プロダクトマネジャー"],
+    "pm":              ["產品經理", "產品主管", "プロダクトマネージャ", "プロダクトマネジャー"],
     "growth":          ["成長", "增長"],
-    "engineer":        ["工程師"],
-    "designer":        ["設計師"],
+    "product":         ["プロダクト"],
+    "manager":         ["マネージャ", "マネジャー"],
+    "engineer":        ["工程師", "エンジニア"],
+    "designer":        ["設計師", "デザイナー"],
     "data":            ["數據", "資料"],
     "marketing":       ["行銷"],
     "sales":           ["業務", "銷售"],
