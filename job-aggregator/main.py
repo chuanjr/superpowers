@@ -140,7 +140,7 @@ def main():
     with ThreadPoolExecutor(max_workers=3) as pool:
         gmail_fut = pool.submit(_fetch_gmail, gmail, sources, markets, days_back)
         rss_fut = pool.submit(rss.fetch_all, sources, markets, titles)
-        scraper_fut = pool.submit(scraper.fetch_all, sources, titles)
+        scraper_fut = pool.submit(scraper.fetch_all, sources, titles, markets)
 
     gmail_raw = gmail_fut.result()
     rss_raw = rss_fut.result()

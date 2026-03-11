@@ -11,6 +11,12 @@ _UA = (
 # Max concurrent browser contexts per site (avoid bot detection)
 _CONCURRENCY = 3
 
+_CAKE_LOCATION = {
+    "tw": "%E5%8F%B0%E7%81%A3",  # 台灣
+    "sg": "Singapore",
+    "jp": "Japan",
+}
+
 _CAKE_SELECTORS = [
     "[class*='JobSearchResult_jobItem']",
     "[class*='JobItem']",
@@ -156,11 +162,13 @@ async def _extract_by_link_pattern(page, href_contains: str, base_url: str, min_
 _cake_dumped: set[str] = set()
 
 
-async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
+async def _scrape_cakeresume_one(keyword: str, market: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
     async with sem:
         results = []
         kw = quote_plus(keyword)
-        url = f"https://www.cake.me/jobs/{kw}?locale=en&refinementList%5Blocation_list_downcase%5D=%E5%8F%B0%E7%81%A3"
+        loc = _CAKE_LOCATION.get(market, "")
+        loc_param = f"&refinementList%5Blocation_list_downcase%5D={quote_plus(loc)}" if loc else ""
+        url = f"https://www.cake.me/jobs/{kw}?locale=en{loc_param}"
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
         try:
@@ -181,7 +189,7 @@ async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Se
             if not selector:
                 items_via_links = await _extract_by_link_pattern(page, "/jobs/", "https://www.cake.me", min_path_depth=3)
                 for r in items_via_links[:20]:
-                    results.append(normalize_cakeresume_item(r, market="tw"))
+                    results.append(normalize_cakeresume_item(r, market=market))
                 return results
 
             items = await page.query_selector_all(selector)
@@ -197,7 +205,7 @@ async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Se
                 full_url = href if (not href or href.startswith("http")) else f"https://www.cake.me{href}"
                 if title and len(title) >= 5 and title.lower() not in _UI_SKIP_LOWER:
                     results.append(normalize_cakeresume_item(
-                        {"title": title, "company": company, "url": full_url}, market="tw"
+                        {"title": title, "company": company, "url": full_url}, market=market
                     ))
         except Exception as e:
             print(f"[WARN] CakeResume '{keyword}': {e}")
@@ -259,7 +267,7 @@ async def _scrape_yourator_one(keyword: str, browser: Browser, sem: asyncio.Sema
     return await _scrape_yourator_page(url, keyword, browser, sem)
 
 
-async def _scrape_all(sources: dict, titles: list[str]) -> list[dict]:
+async def _scrape_all(sources: dict, titles: list[str], markets: list[str]) -> list[dict]:
     """Run all scrapes concurrently with shared browser instances."""
     async with async_playwright() as p:
         browsers = {}
@@ -279,7 +287,8 @@ async def _scrape_all(sources: dict, titles: list[str]) -> list[dict]:
 
             for title in titles:
                 if "cake" in browsers:
-                    tasks.append(_scrape_cakeresume_one(title, browsers["cake"], cake_sem))
+                    for market in markets:
+                        tasks.append(_scrape_cakeresume_one(title, market, browsers["cake"], cake_sem))
                 if "yourator" in browsers and not yourator_url:
                     tasks.append(_scrape_yourator_one(title, browsers["yourator"], yourator_sem))
 
@@ -298,5 +307,5 @@ async def _scrape_all(sources: dict, titles: list[str]) -> list[dict]:
 
 
 class WebScraper:
-    def fetch_all(self, sources: dict, titles: list[str]) -> list[dict]:
-        return asyncio.run(_scrape_all(sources, titles))
+    def fetch_all(self, sources: dict, titles: list[str], markets: list[str] | None = None) -> list[dict]:
+        return asyncio.run(_scrape_all(sources, titles, markets or ["tw"]))
