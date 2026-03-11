@@ -7,7 +7,7 @@ _UI_EXACT = frozenset({
     "see all jobs", "unsubscribe", "jobs similar to", "similar jobs",
     "sign in", "log in",
     # LinkedIn email tab navigation (Traditional Chinese / Simplified Chinese / Japanese)
-    "職缺", "公司", "専欄", "专栏", "求人", "会社",
+    "職缺", "公司", "専欄", "专栏", "求人", "会社", "專欄",
 })
 _UI_PREFIX = ("jobs similar to", "similar to")
 
@@ -33,6 +33,8 @@ class _LinkExtractor(HTMLParser):
         self._current_href = ""
         # canonical_url → index in self.jobs, so later text nodes can update company
         self._seen_urls: dict[str, int] = {}
+        # most recently seen company name from a /company/ link
+        self._current_company = ""
 
     def handle_starttag(self, tag, attrs):
         if tag == "a":
@@ -44,6 +46,12 @@ class _LinkExtractor(HTMLParser):
         if not text or not self._current_href:
             return
         href = self._current_href
+
+        # LinkedIn company profile link → remember company name for upcoming jobs
+        if "/company/" in href and not _is_ui_text(text) and len(text) > 2:
+            self._current_company = text
+            return
+
         # LinkedIn: any link containing /jobs/view/ (href may include /comm/ prefix)
         if "/jobs/view/" in href and len(text) > 3:
             if _is_ui_text(text):
@@ -60,12 +68,11 @@ class _LinkExtractor(HTMLParser):
                         "url": href,
                     })
             else:
-                # New format: title-only link, company may follow in later text nodes
+                # New format: title-only link; assign current company if available
                 canonical = _normalize_url(href)
                 if canonical not in self._seen_urls:
-                    # First text for this URL — treat as job title
                     self._seen_urls[canonical] = len(self.jobs)
-                    self.jobs.append({"title": text, "company": "", "url": href})
+                    self.jobs.append({"title": text, "company": self._current_company, "url": href})
                 else:
                     # Subsequent text for same URL — treat as company name if not yet set
                     idx = self._seen_urls[canonical]
