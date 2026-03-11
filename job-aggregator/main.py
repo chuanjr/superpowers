@@ -47,10 +47,30 @@ def _recency_filter(jobs: list[Job], hours: int = 24) -> list[Job]:
     return kept
 
 
+_ZH_EXPAND: dict[str, list[str]] = {
+    "product manager": ["產品經理", "產品主管"],
+    "pm":              ["產品經理", "產品主管"],
+    "growth":          ["成長", "增長"],
+    "engineer":        ["工程師"],
+    "designer":        ["設計師"],
+    "data":            ["數據", "資料"],
+    "marketing":       ["行銷"],
+    "sales":           ["業務", "銷售"],
+    "project manager": ["專案經理", "項目經理"],
+}
+
+
 def _rule_filter(jobs: list[Job], targets: dict) -> list[Job]:
     """Keep jobs whose title contains at least one keyword from targets.titles,
     and reject any job whose title or description contains an exclude_keyword."""
-    title_keywords = [kw.lower() for t in targets.get("titles", []) for kw in t.split()]
+    en_keywords = [kw.lower() for t in targets.get("titles", []) for kw in t.split()]
+    zh_keywords: list[str] = []
+    for kw in en_keywords:
+        zh_keywords.extend(_ZH_EXPAND.get(kw, []))
+    # also expand full phrases, e.g. "product manager" → 產品經理
+    for t in targets.get("titles", []):
+        zh_keywords.extend(_ZH_EXPAND.get(t.lower(), []))
+    title_keywords = en_keywords + zh_keywords
     exclude = [kw.lower() for kw in targets.get("exclude_keywords", [])]
     if DEBUG:
         print(f"\n[DEBUG] rule_filter: title_keywords={title_keywords}, exclude={exclude}")
