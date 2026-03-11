@@ -87,8 +87,19 @@ async def _dump_html(page, name: str) -> None:
 
 _ARTICLE_SUFFIXES = ("jobs", "roles", "positions", "openings", "opportunities", "careers")
 
+# Generic path segments that indicate a listing page, not a specific job posting
+_LISTING_SEGMENTS = frozenset({"jobs", "positions", "openings", "careers", "roles"})
 
-async def _extract_by_link_pattern(page, href_contains: str, base_url: str) -> list[dict]:
+# Known UI/nav texts to skip (language switcher, nav tabs, etc.)
+_UI_SKIP_LOWER = frozenset({
+    "english", "tiếng việt", "bahasa indonesia", "日本語powered by ai",
+    "中文（繁體）", "中文（简体）", "日本語",
+    "職缺", "公司", "專欄", "jobs", "companies",
+    "jobs similar to", "apply now",
+})
+
+
+async def _extract_by_link_pattern(page, href_contains: str, base_url: str, min_path_depth: int = 2) -> list[dict]:
     links = await page.query_selector_all(f"a[href*='{href_contains}']")
     seen = set()
     results = []
@@ -96,9 +107,19 @@ async def _extract_by_link_pattern(page, href_contains: str, base_url: str) -> l
         href = await link.get_attribute("href") or ""
         if not href or href in seen:
             continue
+        # URL depth check: job detail pages have more path segments than nav/listing links
+        path = href.split("?")[0].rstrip("/")
+        segments = [s for s in path.split("/") if s]
+        if len(segments) < min_path_depth:
+            continue
+        # Skip listing pages where the last segment is a generic word (not a job ID)
+        if segments[-1].lower() in _LISTING_SEGMENTS:
+            continue
         seen.add(href)
         text = (await link.inner_text()).strip()
-        if not text or len(text) < 3 or len(text) > 100:
+        if not text or len(text) < 4 or len(text) > 120:
+            continue
+        if text.lower() in _UI_SKIP_LOWER:
             continue
         # Skip category/navigation links like "Product Manager Jobs in Taiwan"
         if text.lower().rstrip(".").endswith(_ARTICLE_SUFFIXES):
@@ -130,7 +151,7 @@ async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Se
             await page.goto(url, timeout=30000, wait_until="networkidle")
             selector = await _wait_for_any(page, _CAKE_SELECTORS)
             if not selector:
-                items_via_links = await _extract_by_link_pattern(page, "/jobs/", "https://www.cake.me")
+                items_via_links = await _extract_by_link_pattern(page, "/jobs/", "https://www.cake.me", min_path_depth=3)
                 if items_via_links:
                     print(f"[DEBUG] CakeResume '{keyword}': link-pattern fallback, {len(items_via_links)} items")
                     for r in items_via_links[:20]:
