@@ -38,6 +38,7 @@ feedparser==6.0.11
 playwright==1.44.0
 anthropic==0.27.0
 PyYAML==6.0.1
+python-dotenv==1.0.1
 pytest==8.2.0
 pytest-mock==3.14.0
 ```
@@ -62,7 +63,14 @@ __pycache__/
 !.gitignore
 ```
 
-- [ ] **Step 5: Install dependencies**
+- [ ] **Step 5: Create .env.example** (template only — never commit actual `.env`)
+
+```
+# Copy to .env and fill in your values. Never commit .env.
+ANTHROPIC_API_KEY=sk-ant-...
+```
+
+- [ ] **Step 6: Install dependencies**
 
 ```bash
 cd job-aggregator
@@ -72,7 +80,15 @@ playwright install chromium
 
 Expected: all packages install without errors.
 
-- [ ] **Step 6: Commit**
+- [ ] **Step 7: Verify nothing sensitive is tracked**
+
+```bash
+git status
+```
+
+Expected: `.env`, `config.yaml`, `credentials/client_secret.json`, `credentials/token.json` do NOT appear in untracked files. If any appear, stop and fix `.gitignore` before proceeding.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add job-aggregator/
@@ -1825,9 +1841,13 @@ git commit -m "feat: add interactive setup CLI"
 ```python
 #!/usr/bin/env python3
 """Daily job aggregator — run via cron."""
+import os
 import sys
 from datetime import date
 from pathlib import Path
+
+from dotenv import load_dotenv
+load_dotenv()  # loads .env before any other imports that may read env vars
 
 from config_loader import load_config, ConfigError
 from state import load_seen_ids, save_seen_ids
@@ -1843,6 +1863,11 @@ from notifier import build_email_html, build_subject
 
 
 def main():
+    # 0. Validate required secrets are present (fail fast, never log values)
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("[ERROR] ANTHROPIC_API_KEY not set.\nCopy .env.example to .env and add your key.")
+        sys.exit(1)
+
     # 1. Load config
     try:
         cfg = load_config()
@@ -1948,6 +1973,18 @@ git commit -m "feat: add main orchestrator wiring all pipeline stages"
 
 Daily job digest from LinkedIn, Indeed, 104, CakeResume, Yourator, Wellfound.
 
+## Security
+
+**Never commit these files** (already in `.gitignore`):
+- `.env` — contains `ANTHROPIC_API_KEY`
+- `credentials/client_secret.json` — Google OAuth client secret
+- `credentials/token.json` — Google OAuth access token (auto-generated)
+- `config.yaml` — contains your email address
+
+If you accidentally commit any of these, revoke the credentials immediately:
+- Anthropic: https://console.anthropic.com → API Keys → Delete
+- Google: https://console.cloud.google.com → Credentials → Delete
+
 ## Setup
 
 1. Install dependencies:
@@ -1956,7 +1993,13 @@ Daily job digest from LinkedIn, Indeed, 104, CakeResume, Yourator, Wellfound.
    playwright install chromium
    ```
 
-2. Get Google OAuth credentials:
+2. Set up API key:
+   ```bash
+   cp .env.example .env
+   # Edit .env and add your ANTHROPIC_API_KEY
+   ```
+
+3. Get Google OAuth credentials:
    - Go to https://console.cloud.google.com
    - Create project → Enable Gmail API → OAuth 2.0 Client ID (Desktop app)
    - Download as `credentials/client_secret.json`
