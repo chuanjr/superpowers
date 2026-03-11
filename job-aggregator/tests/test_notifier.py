@@ -35,3 +35,12 @@ def test_build_email_html_contains_job_info():
 def test_build_email_html_empty():
     html = build_email_html([], date(2026, 3, 11))
     assert "No new matches" in html
+
+def test_build_email_html_no_company():
+    """Jobs without company (new LinkedIn format) should render without stray '—'."""
+    jobs = [_job("Product Manager", "", "sg", "saas", "series_a")]
+    html = build_email_html(jobs, date(2026, 3, 11))
+    assert "Product Manager" in html
+    assert "SG" in html
+    # No orphan separator when company is empty
+    assert "· SG" not in html

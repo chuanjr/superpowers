@@ -21,11 +21,12 @@ def build_email_html(jobs: list[Job], run_date: date) -> str:
         industry = job.industry or "—"
         stage = job.stage or "—"
         sources = ", ".join(job.sources)
+        company_part = f"{job.company} · " if job.company else ""
         rows.append(f"""
 <tr style="border-bottom:1px solid #eee">
   <td style="padding:12px 8px">
-    <strong><a href="{job.url}" style="color:#1a73e8">{job.title}</a></strong>
-    — {job.company} ({job.market.upper()})<br>
+    <strong><a href="{job.url}" style="color:#1a73e8">{job.title}</a></strong><br>
+    <span style="color:#555">{company_part}{job.market.upper()}</span><br>
     <small>Industry: {industry} &nbsp;|&nbsp; Stage: {stage} &nbsp;|&nbsp; Sources: {sources}</small>
   </td>
 </tr>""")

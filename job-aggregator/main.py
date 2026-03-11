@@ -115,7 +115,7 @@ def main():
     targets = cfg["targets"]
     titles = targets["titles"]
     notif = cfg["notification"]
-    days_back = cfg.get("days_back", 7)
+    days_back = cfg.get("days_back", 3)
 
     # 2. Fetch all sources concurrently
     print("[1/4] Fetching all sources in parallel (Gmail / RSS / Scraper)...")
