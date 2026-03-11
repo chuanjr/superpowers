@@ -14,9 +14,9 @@ def test_build_rss_urls_indeed_per_market():
     sources = {"indeed_rss": True}
     markets = ["tw", "jp", "sg"]
     urls = build_rss_urls(sources, markets, keyword="Backend Engineer")
-    assert any("tw.indeed" in u for u in urls)
-    assert any("jp.indeed" in u for u in urls)
-    assert any("sg.indeed" in u for u in urls)
+    assert any("tw.indeed" in u[0] for u in urls)
+    assert any("jp.indeed" in u[0] for u in urls)
+    assert any("sg.indeed" in u[0] for u in urls)
 
 def test_parse_feed_from_fixture():
     from fetchers.rss_fetcher import parse_feed_entries

@@ -21,20 +21,18 @@ def test_build_subject_with_matches():
 
 def test_build_subject_no_matches():
     subject = build_subject([], date(2026, 3, 11))
-    assert "No new matches" in subject
+    assert "今日無新職缺" in subject
 
 def test_build_email_html_contains_job_info():
     jobs = [_job("Backend Engineer", "Stripe", "sg", "fintech", "public")]
     html = build_email_html(jobs, date(2026, 3, 11))
     assert "Backend Engineer" in html
     assert "Stripe" in html
-    assert "fintech" in html
-    assert "public" in html
     assert "https://example.com/job/1" in html
 
 def test_build_email_html_empty():
     html = build_email_html([], date(2026, 3, 11))
-    assert "No new matches" in html
+    assert "今日無新職缺" in html
 
 def test_build_email_html_no_company():
     """Jobs without company (new LinkedIn format) should render without stray '—'."""

@@ -184,6 +184,7 @@ def main():
     before = len(jobs)
     jobs = _recency_filter(jobs, hours=days_back * 24)
     after_recency = len(jobs)
+    jobs_after_recency = jobs  # keep reference to mark all as seen later
     jobs = _rule_filter(jobs, targets)
     print(f"[3/4] Filter: {before} → recency({days_back}d): {after_recency} → title_match: {len(jobs)}")
 
@@ -199,8 +200,9 @@ def main():
         html_body=html,
     )
 
-    # 7. Update state
-    new_seen = seen_ids | {j.id for j in jobs}
+    # 7. Update state — mark ALL recency-passed jobs as seen (not just title_match hits)
+    # so non-PM / garbage entries don't re-appear on every run within the 3-day window
+    new_seen = seen_ids | {j.id for j in jobs_after_recency}
     save_seen_ids(new_seen)
 
     print(f"Done. {len(jobs)} matches sent to {notif['to']}")
