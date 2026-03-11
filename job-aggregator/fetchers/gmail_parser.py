@@ -48,7 +48,7 @@ class _LinkExtractor(HTMLParser):
         href = self._current_href
 
         # LinkedIn company profile link → remember company name for upcoming jobs
-        if "/company/" in href and not _is_ui_text(text) and len(text) > 2:
+        if "/company/" in href and "/jobs/view/" not in href and not _is_ui_text(text) and len(text) > 2:
             self._current_company = text
             return
 
