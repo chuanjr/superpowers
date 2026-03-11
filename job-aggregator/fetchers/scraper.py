@@ -23,6 +23,12 @@ _CAKE_SELECTORS = [
 ]
 
 _YOURATOR_SELECTORS = [
+    # /search page
+    "[class*='JobSearchItem']",
+    "[class*='job-search-item']",
+    "[class*='SearchResult']",
+    "[class*='search-result']",
+    # /jobs page (legacy fallback)
     ".job-list-item",
     "[class*='job-list-item']",
     "article.job",
@@ -154,7 +160,7 @@ async def _scrape_yourator_one(keyword: str, browser: Browser, sem: asyncio.Sema
     async with sem:
         results = []
         kw = quote_plus(keyword)
-        url = f"https://www.yourator.co/jobs?term={kw}"
+        url = f"https://www.yourator.co/search?s={kw}"
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
         try:
