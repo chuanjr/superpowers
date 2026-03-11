@@ -86,6 +86,8 @@ def _rule_filter(jobs: list[Job], targets: dict) -> list[Job]:
                 print(f"  EXCLUDED (keyword hit): {job.title!r}")
             continue
         if any(kw in t for kw in title_keywords):
+            if DEBUG:
+                print(f"  KEPT: {job.title!r} | company={job.company!r}")
             kept.append(job)
         elif DEBUG:
             print(f"  DROPPED (no title match): {job.title!r}")
@@ -101,10 +103,11 @@ def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_ba
         subject = headers.get("Subject", "")
         source = "linkedin" if "linkedin" in sender else "indeed"
         market = next((m for m in markets if m in subject.lower()), markets[0])
-        jobs = parse_gmail_message(html, source=source, market=market)
+        is_pm_email = "product manager" in subject.lower() or "growth" in subject.lower()
+        jobs = parse_gmail_message(html, source=source, market=market, debug=DEBUG and is_pm_email)
         if DEBUG:
             print(f"[DEBUG] Gmail: {subject[:70]!r} → {len(jobs)} jobs (html={len(html)}B)")
-            if len(jobs) == 0 and "product manager" in subject.lower():
+            if len(jobs) == 0 and is_pm_email:
                 import pathlib
                 dump_path = pathlib.Path(f"/tmp/debug_gmail_{subject[:40].replace('/', '_').replace(' ', '_')}.html")
                 dump_path.write_text(html, encoding="utf-8")

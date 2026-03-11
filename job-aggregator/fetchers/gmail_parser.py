@@ -19,11 +19,18 @@ def _is_ui_text(text: str) -> bool:
     return False
 
 
+def _normalize_url(href: str) -> str:
+    """Strip tracking params to get a stable canonical job URL."""
+    return href.split("?")[0].rstrip("/")
+
+
 class _LinkExtractor(HTMLParser):
     def __init__(self):
         super().__init__()
         self.jobs: list[dict] = []
         self._current_href = ""
+        # canonical_url → index in self.jobs, so later text nodes can update company
+        self._seen_urls: dict[str, int] = {}
 
     def handle_starttag(self, tag, attrs):
         if tag == "a":
@@ -42,21 +49,36 @@ class _LinkExtractor(HTMLParser):
             # Old format: "Backend Engineer at Stripe" in a single link text
             if " at " in text:
                 parts = text.split(" at ", 1)
-                self.jobs.append({
-                    "title": parts[0].strip(),
-                    "company": parts[1].strip() if len(parts) > 1 else "",
-                    "url": href,
-                })
-            # New format: title-only link, company extracted separately later
+                canonical = _normalize_url(href)
+                if canonical not in self._seen_urls:
+                    self._seen_urls[canonical] = len(self.jobs)
+                    self.jobs.append({
+                        "title": parts[0].strip(),
+                        "company": parts[1].strip() if len(parts) > 1 else "",
+                        "url": href,
+                    })
             else:
-                self.jobs.append({"title": text, "company": "", "url": href})
+                # New format: title-only link, company may follow in later text nodes
+                canonical = _normalize_url(href)
+                if canonical not in self._seen_urls:
+                    # First text for this URL — treat as job title
+                    self._seen_urls[canonical] = len(self.jobs)
+                    self.jobs.append({"title": text, "company": "", "url": href})
+                else:
+                    # Subsequent text for same URL — treat as company name if not yet set
+                    idx = self._seen_urls[canonical]
+                    if not self.jobs[idx]["company"] and text != self.jobs[idx]["title"]:
+                        self.jobs[idx]["company"] = text
         # Indeed: links containing viewjob or /rc/clk with non-trivial text
         elif ("viewjob" in href or "/rc/clk" in href) and len(text) > 5:
-            self.jobs.append({
-                "title": text,
-                "company": "",
-                "url": href,
-            })
+            canonical = _normalize_url(href)
+            if canonical not in self._seen_urls:
+                self._seen_urls[canonical] = len(self.jobs)
+                self.jobs.append({
+                    "title": text,
+                    "company": "",
+                    "url": href,
+                })
 
     def handle_endtag(self, tag):
         if tag == "a":
@@ -72,7 +94,7 @@ def _extract_company_from_context(html: str, title: str) -> str:
     return ""
 
 
-def parse_gmail_message(html: str, source: str, market: str) -> list[dict]:
+def parse_gmail_message(html: str, source: str, market: str, debug: bool = False) -> list[dict]:
     if not html:
         return []
     extractor = _LinkExtractor()
@@ -90,4 +112,7 @@ def parse_gmail_message(html: str, source: str, market: str) -> list[dict]:
             "source": source,
             "market": market,
         })
+    if debug:
+        for r in results:
+            print(f"    parsed: {r['title']!r} | company={r['company']!r} | url={r['url'][-50:]!r}")
     return results
