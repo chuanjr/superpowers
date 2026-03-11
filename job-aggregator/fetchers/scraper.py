@@ -34,12 +34,13 @@ async def _scrape_cakeresume(keyword: str) -> list[dict]:
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
-        await page.goto(url, timeout=30000)
-        await page.wait_for_selector(".JobSearchResult_jobItem__KPTmH", timeout=10000)
-        items = await page.query_selector_all(".JobSearchResult_jobItem__KPTmH")
+        await page.goto(url, timeout=30000, wait_until="networkidle")
+        # Use partial class match to avoid brittle CSS-module hashes
+        await page.wait_for_selector("[class*='JobSearchResult_jobItem']", timeout=15000)
+        items = await page.query_selector_all("[class*='JobSearchResult_jobItem']")
         for item in items[:20]:
             title_el = await item.query_selector("h3")
-            company_el = await item.query_selector(".JobSearchResult_companyName__9_jMZ")
+            company_el = await item.query_selector("[class*='JobSearchResult_companyName']")
             link_el = await item.query_selector("a")
             title = await title_el.inner_text() if title_el else ""
             company = await company_el.inner_text() if company_el else ""
@@ -60,12 +61,22 @@ async def _scrape_yourator(keyword: str) -> list[dict]:
     async with async_playwright() as p:
         browser = await p.chromium.launch(headless=True)
         page = await browser.new_page()
-        await page.goto(url, timeout=30000)
-        await page.wait_for_selector(".job-list-item", timeout=10000)
-        items = await page.query_selector_all(".job-list-item")
+        await page.goto(url, timeout=30000, wait_until="networkidle")
+        # Try multiple known selectors for Yourator job cards
+        selector = None
+        for candidate in [".job-list-item", "[class*='job-list-item']", "article.job", "[class*='JobCard']", "li[class*='job']"]:
+            try:
+                await page.wait_for_selector(candidate, timeout=5000)
+                selector = candidate
+                break
+            except Exception:
+                continue
+        if not selector:
+            return results
+        items = await page.query_selector_all(selector)
         for item in items[:20]:
-            title_el = await item.query_selector(".job-title")
-            company_el = await item.query_selector(".company-name")
+            title_el = await item.query_selector(".job-title, h3, h2, [class*='job-title'], [class*='JobTitle']")
+            company_el = await item.query_selector(".company-name, [class*='company-name'], [class*='CompanyName']")
             link_el = await item.query_selector("a")
             title = await title_el.inner_text() if title_el else ""
             company = await company_el.inner_text() if company_el else ""
