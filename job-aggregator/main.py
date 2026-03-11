@@ -17,6 +17,24 @@ from fetchers.scraper import WebScraper
 from parser import parse_all
 from deduplicator import deduplicate, remove_seen
 from notifier import build_email_html, build_subject
+from models import Job
+
+
+def _rule_filter(jobs: list[Job], targets: dict) -> list[Job]:
+    """Keep jobs whose title contains at least one keyword from targets.titles,
+    and reject any job whose title or description contains an exclude_keyword."""
+    title_keywords = [kw.lower() for t in targets.get("titles", []) for kw in t.split()]
+    exclude = [kw.lower() for kw in targets.get("exclude_keywords", [])]
+
+    kept = []
+    for job in jobs:
+        t = job.title.lower()
+        d = job.description.lower()
+        if any(ex in t or ex in d for ex in exclude):
+            continue
+        if any(kw in t for kw in title_keywords):
+            kept.append(job)
+    return kept
 
 
 def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str]) -> list[dict]:
@@ -67,8 +85,13 @@ def main():
     seen_ids = load_seen_ids()
     jobs = remove_seen(jobs, seen_ids)
 
-    # 5. Send email
-    print(f"[3/4] Sending digest ({len(jobs)} matches)...")
+    # 5. Rule-based filter
+    before = len(jobs)
+    jobs = _rule_filter(jobs, targets)
+    print(f"[3/4] Rule filter: {before} → {len(jobs)} jobs kept")
+
+    # 6. Send email
+    print(f"[4/4] Sending digest ({len(jobs)} matches)...")
     today = date.today()
     subject = build_subject(jobs, today)
     html = build_email_html(jobs, today)
@@ -79,7 +102,7 @@ def main():
         html_body=html,
     )
 
-    # 6. Update state
+    # 7. Update state
     new_seen = seen_ids | {j.id for j in jobs}
     save_seen_ids(new_seen)
 

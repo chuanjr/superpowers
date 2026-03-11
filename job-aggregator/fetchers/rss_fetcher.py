@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import quote_plus
+import re
 import feedparser
 
 
@@ -35,16 +36,22 @@ def build_rss_urls(sources: dict, markets: list[str], keyword: str) -> list[tupl
     return results
 
 
+def _clean_description(raw: str) -> str:
+    """Strip HTML tags and collapse whitespace."""
+    text = re.sub(r"<[^>]+>", " ", raw)
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def parse_feed_entries(feed, source: str, market: str) -> list[dict]:
     entries = []
     for entry in feed.entries:
         entries.append({
             "title": entry.get("title", "").strip(),
             "url": entry.get("link", ""),
-            "description": entry.get("summary", ""),
+            "description": _clean_description(entry.get("summary", "")),
             "source": source,
             "market": market,
-            "company": "",
+            "company": entry.get("author", "").strip(),
             "location": "",
         })
     return entries
