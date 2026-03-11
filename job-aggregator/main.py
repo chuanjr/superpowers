@@ -5,6 +5,16 @@ import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone, timedelta
 
+DEBUG = "--debug" in sys.argv or os.getenv("DEBUG") == "1"
+
+
+def _dbg_jobs(label: str, jobs):
+    if not DEBUG:
+        return
+    print(f"\n[DEBUG] {label} ({len(jobs)} jobs):")
+    for j in jobs:
+        print(f"  [{j.sources[0]}] {j.title!r} | company={j.company!r} | posted_at={j.posted_at}")
+
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -42,15 +52,21 @@ def _rule_filter(jobs: list[Job], targets: dict) -> list[Job]:
     and reject any job whose title or description contains an exclude_keyword."""
     title_keywords = [kw.lower() for t in targets.get("titles", []) for kw in t.split()]
     exclude = [kw.lower() for kw in targets.get("exclude_keywords", [])]
+    if DEBUG:
+        print(f"\n[DEBUG] rule_filter: title_keywords={title_keywords}, exclude={exclude}")
 
     kept = []
     for job in jobs:
         t = job.title.lower()
         d = job.description.lower()
         if any(ex in t or ex in d for ex in exclude):
+            if DEBUG:
+                print(f"  EXCLUDED (keyword hit): {job.title!r}")
             continue
         if any(kw in t for kw in title_keywords):
             kept.append(job)
+        elif DEBUG:
+            print(f"  DROPPED (no title match): {job.title!r}")
     return kept
 
 
@@ -95,16 +111,21 @@ def main():
 
     # 3. Parse
     print("[2/4] Parsing and normalizing...")
+    if DEBUG:
+        print(f"[DEBUG] raw_entries: {len(raw_entries)} total")
     jobs = parse_all(raw_entries)
+    _dbg_jobs("after parse_all", jobs)
 
     # 4. Deduplicate (cross-platform + cross-day)
     jobs = deduplicate(jobs)
     seen_ids = load_seen_ids()
     jobs = remove_seen(jobs, seen_ids)
+    _dbg_jobs("after dedup+remove_seen", jobs)
 
     # 5. Recency + rule-based filter
     before = len(jobs)
     jobs = _recency_filter(jobs)
+    _dbg_jobs("after recency_filter", jobs)
     jobs = _rule_filter(jobs, targets)
     print(f"[3/4] Filter: {before} → {len(jobs)} jobs kept (24 h + title match)")
 
