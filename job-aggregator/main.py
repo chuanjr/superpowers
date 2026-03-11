@@ -128,12 +128,14 @@ def main():
         rss_fut = pool.submit(rss.fetch_all, sources, markets, titles)
         scraper_fut = pool.submit(scraper.fetch_all, sources, titles)
 
-    raw_entries = gmail_fut.result() + rss_fut.result() + scraper_fut.result()
+    gmail_raw = gmail_fut.result()
+    rss_raw = rss_fut.result()
+    scraper_raw = scraper_fut.result()
+    raw_entries = gmail_raw + rss_raw + scraper_raw
 
     # 3. Parse
     print("[2/4] Parsing and normalizing...")
-    if DEBUG:
-        print(f"[DEBUG] raw_entries: {len(raw_entries)} total")
+    print(f"  raw: gmail={len(gmail_raw)}, rss={len(rss_raw)}, scraper={len(scraper_raw)}")
     jobs = parse_all(raw_entries)
     _dbg_jobs("after parse_all", jobs)
 
@@ -146,9 +148,9 @@ def main():
     # 5. Recency + rule-based filter
     before = len(jobs)
     jobs = _recency_filter(jobs, hours=days_back * 24)
-    _dbg_jobs("after recency_filter", jobs)
+    after_recency = len(jobs)
     jobs = _rule_filter(jobs, targets)
-    print(f"[3/4] Filter: {before} → {len(jobs)} jobs kept ({days_back}d + title match)")
+    print(f"[3/4] Filter: {before} → recency({days_back}d): {after_recency} → title_match: {len(jobs)}")
 
     # 6. Send email
     print(f"[4/4] Sending digest ({len(jobs)} matches)...")
