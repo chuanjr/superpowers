@@ -6,6 +6,8 @@ _UI_EXACT = frozenset({
     "view", "apply", "apply now", "see job", "see more jobs", "view job",
     "see all jobs", "unsubscribe", "jobs similar to", "similar jobs",
     "sign in", "log in",
+    # LinkedIn email tab navigation (Traditional Chinese / Simplified Chinese / Japanese)
+    "職缺", "公司", "専欄", "专栏", "求人", "会社",
 })
 _UI_PREFIX = ("jobs similar to", "similar to")
 
@@ -20,8 +22,8 @@ def _is_ui_text(text: str) -> bool:
 
 
 def _normalize_url(href: str) -> str:
-    """Strip tracking params to get a stable canonical job URL."""
-    return href.split("?")[0].rstrip("/")
+    """Strip tracking params and hash fragments to get a stable canonical job URL."""
+    return href.split("?")[0].split("#")[0].rstrip("/")
 
 
 class _LinkExtractor(HTMLParser):
