@@ -33,12 +33,14 @@ def test_parse_raw_entry_strips_whitespace():
     assert job.title == "Software Engineer"
     assert job.company == "Shopify"
 
-def test_parse_raw_entry_empty_company_returns_none():
+def test_parse_raw_entry_empty_company_is_allowed():
+    """Empty company is valid — LinkedIn new-format emails don't include it."""
     raw = {
         "title": "Engineer",
         "company": "",
         "location": "", "market": "tw",
-        "url": "https://x.com", "description": "", "source": "cakeresume",
+        "url": "https://x.com", "description": "", "source": "linkedin",
     }
     job = parse_raw_entry(raw)
-    assert job is None
+    assert isinstance(job, Job)
+    assert job.company == ""
