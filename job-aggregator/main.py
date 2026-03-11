@@ -96,9 +96,13 @@ def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_ba
         html = extract_html_body(msg)
         headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
         sender = headers.get("From", "")
+        subject = headers.get("Subject", "")
         source = "linkedin" if "linkedin" in sender else "indeed"
-        market = next((m for m in markets if m in headers.get("Subject", "").lower()), markets[0])
-        raw.extend(parse_gmail_message(html, source=source, market=market))
+        market = next((m for m in markets if m in subject.lower()), markets[0])
+        jobs = parse_gmail_message(html, source=source, market=market)
+        if DEBUG:
+            print(f"[DEBUG] Gmail: {subject[:70]!r} → {len(jobs)} jobs (html={len(html)}B)")
+        raw.extend(jobs)
     return raw
 
 

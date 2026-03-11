@@ -31,17 +31,19 @@ def build_search_query(sources: dict, days_back: int = 1) -> str:
 
 
 def extract_html_body(message: dict) -> str:
-    payload = message.get("payload", {})
-    parts = payload.get("parts", [])
-    if parts:
-        for part in parts:
-            if part.get("mimeType") == "text/html":
-                data = part["body"].get("data", "")
+    """Recursively search for text/html in potentially nested multipart payloads."""
+    def _find_html(part: dict) -> str:
+        if part.get("mimeType") == "text/html":
+            data = part.get("body", {}).get("data", "")
+            if data:
                 return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
-    data = payload.get("body", {}).get("data", "")
-    if data:
-        return base64.urlsafe_b64decode(data).decode("utf-8", errors="replace")
-    return ""
+        for sub in part.get("parts", []):
+            result = _find_html(sub)
+            if result:
+                return result
+        return ""
+
+    return _find_html(message.get("payload", {}))
 
 
 class GmailFetcher:
