@@ -5,11 +5,12 @@ from models import Job, make_job_id
 
 def parse_raw_entry(raw: dict) -> Optional[Job]:
     title = raw.get("title", "").strip()
-    company = raw.get("company", "").strip()
-    if not title or not company:
+    if not title:
         return None
+    company = raw.get("company", "").strip()
+    url = raw.get("url", "")
     return Job(
-        id=make_job_id(company, title),
+        id=make_job_id(company, title, url),
         title=title,
         company=company,
         location=raw.get("location", "").strip(),

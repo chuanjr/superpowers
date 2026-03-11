@@ -3,8 +3,11 @@ from dataclasses import dataclass, field
 from typing import Optional
 
 
-def make_job_id(company: str, title: str) -> str:
-    key = f"{company.lower().strip()}::{title.lower().strip()}"
+def make_job_id(company: str, title: str, url: str = "") -> str:
+    if company:
+        key = f"{company.lower().strip()}::{title.lower().strip()}"
+    else:
+        key = url or title.lower().strip()
     return hashlib.md5(key.encode()).hexdigest()
 
 
