@@ -78,11 +78,19 @@ async def _wait_for_any(page, candidates: list[str], timeout_each: int = 4000) -
 
 
 async def _dump_html(page, name: str) -> None:
-    path = f"/tmp/debug_{name}.html"
+    safe_name = name.replace(" ", "_").replace("/", "_")
+    path = f"/tmp/debug_{safe_name}.html"
     html = await page.content()
     with open(path, "w") as f:
         f.write(html)
-    print(f"[DEBUG] Saved rendered HTML to {path} for selector diagnosis")
+    # Print job-related class names inline so we can diagnose without reading the file
+    import re
+    classes: set[str] = set()
+    for m in re.finditer(r'class="([^"]+)"', html):
+        for c in m.group(1).split():
+            if re.search(r'job|Job|card|Card|item|Item|result|Result|search|Search|position|Position|list|List', c):
+                classes.add(c)
+    print(f"[DEBUG] Saved HTML to {path}. Job-related classes: {sorted(classes)[:30]}")
 
 
 _ARTICLE_SUFFIXES = ("jobs", "roles", "positions", "openings", "opportunities", "careers")
@@ -100,7 +108,12 @@ _UI_SKIP_LOWER = frozenset({
 
 
 async def _extract_by_link_pattern(page, href_contains: str, base_url: str, min_path_depth: int = 2) -> list[dict]:
-    links = await page.query_selector_all(f"a[href*='{href_contains}']")
+    # Prefer scoping to main content area to exclude nav/footer links
+    scope = await page.query_selector("main, [role='main'], #content, #main")
+    if scope:
+        links = await scope.query_selector_all(f"a[href*='{href_contains}']")
+    else:
+        links = await page.query_selector_all(f"a[href*='{href_contains}']")
     seen = set()
     results = []
     for link in links:
