@@ -117,14 +117,14 @@ async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Se
     async with sem:
         results = []
         kw = quote_plus(keyword)
-        url = f"https://www.cakeresume.com/jobs?q={kw}&locale=tw"
+        url = f"https://www.cake.me/jobs/{kw}"
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
         try:
             await page.goto(url, timeout=30000, wait_until="networkidle")
             selector = await _wait_for_any(page, _CAKE_SELECTORS)
             if not selector:
-                items_via_links = await _extract_by_link_pattern(page, "/jobs/", "https://www.cakeresume.com")
+                items_via_links = await _extract_by_link_pattern(page, "/jobs/", "https://www.cake.me")
                 if items_via_links:
                     print(f"[DEBUG] CakeResume '{keyword}': link-pattern fallback, {len(items_via_links)} items")
                     for r in items_via_links[:20]:
@@ -144,7 +144,7 @@ async def _scrape_cakeresume_one(keyword: str, browser: Browser, sem: asyncio.Se
                 title = await title_el.inner_text() if title_el else ""
                 company = await company_el.inner_text() if company_el else ""
                 href = await link_el.get_attribute("href") if link_el else ""
-                full_url = href if (not href or href.startswith("http")) else f"https://www.cakeresume.com{href}"
+                full_url = href if (not href or href.startswith("http")) else f"https://www.cake.me{href}"
                 if title:
                     results.append(normalize_cakeresume_item(
                         {"title": title, "company": company, "url": full_url}, market="tw"
