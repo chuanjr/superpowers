@@ -1,6 +1,33 @@
 import asyncio
+import re
 from playwright.async_api import async_playwright, Browser
 from urllib.parse import quote, quote_plus
+
+# 104 company names come in the form "BrandName_LegalName業種" or just "LegalName業種".
+# Strip industry classification suffixes so we show clean company names.
+_104_INDUSTRY_SUFFIXES = re.compile(
+    r"(電腦軟體服務業|電腦系統整合服務業|網際網路相關業|多媒體傳播相關業|數位內容產業"
+    r"|其它軟體及網路相關業|資訊服務業|電子商務業|FinTech|金融業|保險業"
+    r"|軟體及網路相關業|電腦及週邊設備業|半導體業|光電及光學相關業"
+    r"|人力資源服務業|顧問服務業|行銷/市場調查業)$"
+)
+
+
+def _clean_104_company(raw: str) -> str:
+    """Normalize 104 company names.
+
+    104 formats:
+    - "BrandName_LegalName業種"  → "BrandName"
+    - "LegalName業種"            → "LegalName"
+    """
+    name = raw.strip()
+    # If there is an underscore, the part before it is the display brand name
+    if "_" in name:
+        name = name.split("_")[0].strip()
+    else:
+        # Strip industry classification suffix
+        name = _104_INDUSTRY_SUFFIXES.sub("", name).strip()
+    return name
 
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -203,7 +230,7 @@ async def _extract_by_link_pattern(page, href_contains: str, base_url: str, min_
                             continue
                         sl_text = (await sl.inner_text()).strip().split("\n")[0]
                         if sl_text and 2 <= len(sl_text) <= 60 and sl_text.lower() not in _UI_SKIP_LOWER:
-                            company = sl_text
+                            company = _clean_104_company(sl_text)
                             break
             except Exception:
                 pass
@@ -308,7 +335,7 @@ async def _scrape_104_one(keyword: str, browser: Browser, sem: asyncio.Semaphore
                     "[class*='company'], [class*='Company'], .b-block--company"
                 )
                 if company_el:
-                    company = (await company_el.inner_text()).strip().split("\n")[0]
+                    company = _clean_104_company((await company_el.inner_text()).strip().split("\n")[0])
                 else:
                     all_links = await item.query_selector_all("a[href]")
                     for al in all_links:
@@ -317,7 +344,7 @@ async def _scrape_104_one(keyword: str, browser: Browser, sem: asyncio.Semaphore
                             continue
                         al_text = (await al.inner_text()).strip().split("\n")[0]
                         if al_text and 2 <= len(al_text) <= 60 and al_text.lower() not in _UI_SKIP_LOWER:
-                            company = al_text
+                            company = _clean_104_company(al_text)
                             break
                 href = await link_el.get_attribute("href") if link_el else ""
                 full_url = href if (not href or href.startswith("http")) else f"https://www.104.com.tw{href}"
