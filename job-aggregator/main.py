@@ -64,15 +64,22 @@ _ZH_EXPAND: dict[str, list[str]] = {
 
 def _rule_filter(jobs: list[Job], targets: dict) -> list[Job]:
     """Keep jobs whose title contains at least one keyword from targets.titles,
-    and reject any job whose title or description contains an exclude_keyword."""
-    en_keywords = [kw.lower() for t in targets.get("titles", []) for kw in t.split()]
+    and reject any job whose title or description contains an exclude_keyword.
+
+    English matching uses the FULL target phrase (not individual words) so that
+    "product manager" does not accidentally match "project manager" or
+    "program manager". CJK expansions are derived from both full phrases and
+    individual words so that Chinese/Japanese titles are correctly matched.
+    """
+    en_phrases = [t.lower() for t in targets.get("titles", [])]
     zh_keywords: list[str] = []
-    for kw in en_keywords:
-        zh_keywords.extend(_ZH_EXPAND.get(kw, []))
-    # also expand full phrases, e.g. "product manager" → 產品經理
-    for t in targets.get("titles", []):
-        zh_keywords.extend(_ZH_EXPAND.get(t.lower(), []))
-    title_keywords = en_keywords + zh_keywords
+    for phrase in en_phrases:
+        # Expand the full phrase (e.g. "product manager" → 產品經理)
+        zh_keywords.extend(_ZH_EXPAND.get(phrase, []))
+        # Expand each word for CJK-only titles (e.g. "pm" → 產品經理)
+        for word in phrase.split():
+            zh_keywords.extend(_ZH_EXPAND.get(word, []))
+    title_keywords = en_phrases + zh_keywords
     exclude = [kw.lower() for kw in targets.get("exclude_keywords", [])]
     if DEBUG:
         print(f"\n[DEBUG] rule_filter: title_keywords={title_keywords}, exclude={exclude}")

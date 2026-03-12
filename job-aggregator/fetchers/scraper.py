@@ -249,6 +249,7 @@ async def _scrape_104_one(keyword: str, browser: Browser, sem: asyncio.Semaphore
         try:
             await page.goto(url, timeout=45000, wait_until="domcontentloaded")
             await page.wait_for_timeout(3000)
+            await _dump_html(page, f"104_{kw}")  # dump to inspect actual class names
             selector = await _wait_for_any(page, _104_SELECTORS)
             if not selector:
                 items_via_links = await _extract_by_link_pattern(page, "/job/", "https://www.104.com.tw", min_path_depth=2)
