@@ -396,8 +396,15 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
         try:
-            await page.goto(url, timeout=45000, wait_until="networkidle")
-            await page.wait_for_timeout(3000)
+            await page.goto(url, timeout=45000, wait_until="domcontentloaded")
+            # Wait for job listing container or empty state to appear
+            try:
+                await page.wait_for_selector(
+                    ".search-result__cards, .search-records-section, [class*='search-result'], [class*='job-list'], [class*='JobList'], main",
+                    timeout=8000,
+                )
+            except Exception:
+                pass  # fall through and try extracting anyway
 
             # Use JS to extract all anchor data (works even if href="" or href="#")
             raw_links: list[dict] = await page.evaluate("""
@@ -526,11 +533,18 @@ async def _scrape_all(sources: dict, titles: list[str], markets: list[str]) -> l
                 await b.close()
 
     flat = []
+    source_counts: dict[str, int] = {}
     for batch in batches:
         if isinstance(batch, Exception):
             print(f"[WARN] scrape task raised: {batch}")
         else:
+            for item in batch:
+                src = item.get("source", "unknown")
+                source_counts[src] = source_counts.get(src, 0) + 1
             flat.extend(batch)
+    if source_counts:
+        breakdown = ", ".join(f"{s}={c}" for s, c in sorted(source_counts.items()))
+        print(f"  scraper breakdown: {breakdown}")
     return flat
 
 
