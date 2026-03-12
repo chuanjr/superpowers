@@ -82,7 +82,7 @@ def _rule_filter(jobs: list[Job], targets: dict) -> list[Job]:
     title_keywords = en_phrases + zh_keywords
     exclude = [kw.lower() for kw in targets.get("exclude_keywords", [])]
     if DEBUG:
-        print(f"\n[DEBUG] rule_filter: title_keywords={title_keywords}, exclude={exclude}")
+        print(f"\n[DEBUG] rule_filter: en_phrases={en_phrases}, zh={zh_keywords[:6]}..., exclude={exclude}")
 
     kept = []
     for job in jobs:
@@ -200,7 +200,6 @@ def main():
     before = len(jobs)
     jobs = _recency_filter(jobs, hours=days_back * 24)
     after_recency = len(jobs)
-    jobs_after_recency = jobs  # keep reference to mark all as seen later
     jobs = _rule_filter(jobs, targets)
     print(f"[3/4] Filter: {before} → recency({days_back}d): {after_recency} → title_match: {len(jobs)}")
 
@@ -216,9 +215,10 @@ def main():
         html_body=html,
     )
 
-    # 7. Update state — mark ALL recency-passed jobs as seen (not just title_match hits)
-    # so non-PM / garbage entries don't re-appear on every run within the 3-day window
-    new_seen = seen_ids | {j.id for j in jobs_after_recency}
+    # 7. Update state — only mark SENT jobs as seen (title_match hits).
+    # Scrapers return the same top listings every day; marking everything seen
+    # would permanently block them after the first run.
+    new_seen = seen_ids | {j.id for j in jobs}
     save_seen_ids(new_seen)
 
     print(f"Done. {len(jobs)} matches sent to {notif['to']}")
