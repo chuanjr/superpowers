@@ -45,6 +45,7 @@ _CAKE_LOCATION = {
     "tw": "Taipei City-Taiwan",
     "sg": "Republic of Singapore",
     "jp": "Tokyo Metropolis-Japan",
+    "us": "United States",
 }
 
 _CAKE_SELECTORS = [

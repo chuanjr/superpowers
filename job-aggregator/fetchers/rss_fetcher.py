@@ -6,12 +6,13 @@ import time
 import feedparser
 
 
-INDEED_DOMAINS = {"tw": "tw.indeed.com", "jp": "jp.indeed.com", "sg": "sg.indeed.com"}
+INDEED_DOMAINS = {"tw": "tw.indeed.com", "jp": "jp.indeed.com", "sg": "sg.indeed.com", "us": "www.indeed.com"}
 
 _WELLFOUND_LOCATIONS: dict[str, list[str]] = {
     "tw": ["taiwan", "taipei", "remote"],
     "sg": ["singapore", "remote"],
     "jp": ["japan", "tokyo", "remote"],
+    "us": ["united+states", "san+francisco", "new+york", "remote"],
 }
 
 

@@ -106,6 +106,7 @@ _MARKET_SUBJECT_KEYWORDS: dict[str, list[str]] = {
     "tw": ["taiwan", "taipei", "台灣", "台北"],
     "sg": ["singapore"],
     "jp": ["japan", "tokyo", "日本", "東京"],
+    "us": ["united states", "san francisco", "new york", "seattle", "austin", "boston", "chicago", "los angeles"],
 }
 
 
