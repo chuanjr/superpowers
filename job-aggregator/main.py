@@ -172,12 +172,16 @@ def main():
     print("[2/4] Parsing and normalizing...")
     print(f"  raw: gmail={len(gmail_raw)}, rss={len(rss_raw)}, scraper={len(scraper_raw)}")
     jobs = parse_all(raw_entries)
+    after_parse = len(jobs)
     _dbg_jobs("after parse_all", jobs)
 
     # 4. Deduplicate (cross-platform + cross-day)
     jobs = deduplicate(jobs)
+    after_dedup = len(jobs)
     seen_ids = load_seen_ids()
     jobs = remove_seen(jobs, seen_ids)
+    after_remove = len(jobs)
+    print(f"  parse_all: {len(raw_entries)} → {after_parse}  dedup: {after_dedup}  remove_seen: {after_remove} (seen_ids={len(seen_ids)})")
     _dbg_jobs("after dedup+remove_seen", jobs)
 
     # 5. Recency + rule-based filter
