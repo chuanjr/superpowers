@@ -1,6 +1,7 @@
 credentials/client_secret.json
 credentials/token.json
 state.json
+jobs.db
 config.yaml
 __pycache__/
 .pytest_cache/
