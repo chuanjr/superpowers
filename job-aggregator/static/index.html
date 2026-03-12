@@ -496,6 +496,21 @@
       `${filtered.length} job${filtered.length !== 1 ? 's' : ''}` +
       (filtered.length < ALL_JOBS.length ? ` of ${ALL_JOBS.length}` : '');
 
+    // Update sidebar counts to reflect currently visible jobs
+    const mkCounts = {}, srcCounts = {};
+    filtered.forEach(j => {
+      if (j.market) mkCounts[j.market] = (mkCounts[j.market] || 0) + 1;
+      (j.sources || []).forEach(s => { srcCounts[s] = (srcCounts[s] || 0) + 1; });
+    });
+    document.querySelectorAll('.mkt-cb').forEach(cb => {
+      const el = cb.closest('label').querySelector('.count');
+      if (el) el.textContent = mkCounts[cb.value] || 0;
+    });
+    document.querySelectorAll('.src-cb').forEach(cb => {
+      const el = cb.closest('label').querySelector('.count');
+      if (el) el.textContent = srcCounts[cb.value] || 0;
+    });
+
     const container = document.getElementById('job-list');
     if (!filtered.length) {
       container.innerHTML = `
