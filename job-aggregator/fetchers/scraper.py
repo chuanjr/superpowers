@@ -278,38 +278,50 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
         try:
             await page.goto(url, timeout=45000, wait_until="domcontentloaded")
             await page.wait_for_timeout(3000)
-            selector = await _wait_for_any(page, _YOURATOR_SELECTORS)
-            if not selector:
-                items_via_links = await _extract_by_link_pattern(page, "/jobs/", "https://www.yourator.co")
-                if items_via_links:
-                    print(f"[DEBUG] Yourator '{label}': link-pattern fallback, {len(items_via_links)} items")
-                    for r in items_via_links[:20]:
-                        results.append(normalize_yourator_item(
-                            {"job_title": r.get("title"), "company_name": r.get("company"), "job_url": r.get("url")},
-                            market="tw"
-                        ))
-                else:
-                    print(f"[DEBUG] Yourator '{label}': {await page.title()!r} — no selector matched")
-                    await _dump_html(page, f"yourator_{label}")
-                return results
 
-            items = await page.query_selector_all(selector)
-            for item in items[:20]:
-                title_el = await item.query_selector(
-                    ".job-title, h3, h2, [class*='job-title'], [class*='JobTitle'], [class*='title'], [class*='Title']"
-                )
-                company_el = await item.query_selector(
-                    ".company-name, [class*='company-name'], [class*='CompanyName'], [class*='company']"
-                )
-                link_el = await item.query_selector("a")
-                title = await title_el.inner_text() if title_el else ""
-                company = await company_el.inner_text() if company_el else ""
-                href = await link_el.get_attribute("href") if link_el else ""
-                full_url = href if (not href or href.startswith("http")) else f"https://www.yourator.co{href}"
-                if title:
-                    results.append(normalize_yourator_item(
-                        {"job_title": title, "company_name": company, "job_url": full_url}, market="tw"
-                    ))
+            # Yourator job URLs follow /companies/{company}/jobs/{id} pattern.
+            # Scope to .search-result__cards to avoid nav/footer links.
+            scope = await page.query_selector(".search-result__cards, .search-records-section")
+            if scope:
+                links = await scope.query_selector_all("a[href*='/companies/'][href*='/jobs/']")
+            else:
+                links = await page.query_selector_all("a[href*='/companies/'][href*='/jobs/']")
+
+            seen = set()
+            for link in links:
+                href = await link.get_attribute("href") or ""
+                if not href or href in seen:
+                    continue
+                seen.add(href)
+                full_url = href if href.startswith("http") else f"https://www.yourator.co{href}"
+                # Extract company from URL: /companies/{company}/jobs/{id}
+                parts = href.split("/")
+                company_from_url = parts[2] if len(parts) > 2 else ""
+                text = (await link.inner_text()).strip()
+                if not text or len(text) < 3 or text.lower() in _UI_SKIP_LOWER:
+                    continue
+                # Try to get company name from a sibling element
+                parent = await link.evaluate_handle("el => el.closest('li, article, div[class]') || el.parentElement")
+                company = ""
+                if parent:
+                    try:
+                        company_el = await parent.query_selector(
+                            "[class*='company'], [class*='Company'], [class*='brand']"
+                        )
+                        if company_el:
+                            company = (await company_el.inner_text()).strip()
+                    except Exception:
+                        pass
+                results.append(normalize_yourator_item(
+                    {"job_title": text, "company_name": company or company_from_url, "job_url": full_url},
+                    market="tw"
+                ))
+                if len(results) >= 20:
+                    break
+
+            if not results:
+                print(f"[DEBUG] Yourator '{label}': {await page.title()!r} — 0 jobs extracted")
+                await _dump_html(page, f"yourator_{label}")
         except Exception as e:
             print(f"[WARN] Yourator '{label}': {e}")
         finally:
