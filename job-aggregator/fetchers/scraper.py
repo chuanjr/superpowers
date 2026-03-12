@@ -1,7 +1,10 @@
 import asyncio
 import re
+from pathlib import Path
 from playwright.async_api import async_playwright, Browser
 from urllib.parse import quote, quote_plus
+
+_CAKE_AUTH_STATE = Path("credentials/cakeresume_state.json")
 
 # 104 company names come in the form "BrandName_LegalName業種" or just "LegalName業種".
 # Strip industry classification suffixes so we show clean company names.
@@ -248,7 +251,11 @@ async def _scrape_cakeresume_one(keyword: str, market: str, browser: Browser, se
         loc = _CAKE_LOCATION.get(market, "")
         loc_param = f"locations={quote(loc)}&" if loc else ""
         url = f"https://www.cake.me/jobs/{kw}?{loc_param}order=latest"
-        context = await browser.new_context(user_agent=_UA)
+        # Load saved login session if available (run setup_cakeresume_auth.py first)
+        ctx_kwargs = {"user_agent": _UA}
+        if _CAKE_AUTH_STATE.exists():
+            ctx_kwargs["storage_state"] = str(_CAKE_AUTH_STATE)
+        context = await browser.new_context(**ctx_kwargs)
         page = await context.new_page()
         try:
             await page.goto(url, timeout=45000, wait_until="domcontentloaded")
@@ -258,11 +265,18 @@ async def _scrape_cakeresume_one(keyword: str, market: str, browser: Browser, se
             if keyword not in _cake_dumped:
                 _cake_dumped.add(keyword)
                 await _dump_html(page, f"cakeresume_{kw}")
-            # If the page shows empty results, bail early — don't fall back to
-            # link-pattern extraction which picks up footer/nav company names
+            # If the page requires login (GuestHint) or has no results (EmptyResults), bail early
+            # GuestHint = login wall (no auth state), EmptyResults = no matching jobs
+            gated = await page.query_selector("[class*='GuestHint']")
+            if gated:
+                if _CAKE_AUTH_STATE.exists():
+                    print(f"[WARN] CakeResume '{keyword}': login may have expired — re-run setup_cakeresume_auth.py")
+                else:
+                    print(f"[DEBUG] CakeResume '{keyword}': not logged in — run setup_cakeresume_auth.py to enable")
+                return results
             empty = await page.query_selector("[class*='EmptyResults']")
             if empty:
-                print(f"[DEBUG] CakeResume '{keyword}': empty results page, skipping")
+                print(f"[DEBUG] CakeResume '{keyword}': no matching jobs")
                 return results
             selector = await _wait_for_any(page, _CAKE_SELECTORS)
             if not selector:
