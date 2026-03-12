@@ -26,6 +26,11 @@ def _normalize_url(href: str) -> str:
     return href.split("?")[0].split("#")[0].rstrip("/")
 
 
+def _clean_company(text: str) -> str:
+    """Strip location suffix from 'Company · City, Country' text."""
+    return text.split("·")[0].strip()
+
+
 class _LinkExtractor(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -35,9 +40,15 @@ class _LinkExtractor(HTMLParser):
         self._seen_urls: dict[str, int] = {}
         # most recently seen company name from a /company/ link
         self._current_company = ""
+        # most recently seen img src (company logo before job link)
+        self._pending_logo = ""
 
     def handle_starttag(self, tag, attrs):
-        if tag == "a":
+        if tag == "img":
+            src = dict(attrs).get("src", "")
+            if src:
+                self._pending_logo = src
+        elif tag == "a":
             attrs_dict = dict(attrs)
             self._current_href = attrs_dict.get("href", "")
 
@@ -49,7 +60,7 @@ class _LinkExtractor(HTMLParser):
 
         # LinkedIn company profile link → remember company name for upcoming jobs
         if "/company/" in href and "/jobs/view/" not in href and not _is_ui_text(text) and len(text) > 2:
-            self._current_company = text
+            self._current_company = _clean_company(text)
             return
 
         # LinkedIn: any link containing /jobs/view/ (href may include /comm/ prefix)
@@ -66,18 +77,26 @@ class _LinkExtractor(HTMLParser):
                         "title": parts[0].strip(),
                         "company": parts[1].strip() if len(parts) > 1 else "",
                         "url": href,
+                        "logo_url": self._pending_logo,
                     })
+                    self._pending_logo = ""
             else:
                 # New format: title-only link; assign current company if available
                 canonical = _normalize_url(href)
                 if canonical not in self._seen_urls:
                     self._seen_urls[canonical] = len(self.jobs)
-                    self.jobs.append({"title": text, "company": self._current_company, "url": href})
+                    self.jobs.append({
+                        "title": text,
+                        "company": self._current_company,
+                        "url": href,
+                        "logo_url": self._pending_logo,
+                    })
+                    self._pending_logo = ""
                 else:
                     # Subsequent text for same URL — treat as company name if not yet set
                     idx = self._seen_urls[canonical]
                     if not self.jobs[idx]["company"] and text != self.jobs[idx]["title"]:
-                        self.jobs[idx]["company"] = text
+                        self.jobs[idx]["company"] = _clean_company(text)
         # Indeed: links containing viewjob or /rc/clk with non-trivial text
         elif ("viewjob" in href or "/rc/clk" in href) and len(text) > 5:
             canonical = _normalize_url(href)
@@ -87,7 +106,9 @@ class _LinkExtractor(HTMLParser):
                     "title": text,
                     "company": "",
                     "url": href,
+                    "logo_url": self._pending_logo,
                 })
+                self._pending_logo = ""
 
     def handle_endtag(self, tag):
         if tag == "a":
@@ -116,6 +137,7 @@ def parse_gmail_message(html: str, source: str, market: str, debug: bool = False
             "title": job.get("title", ""),
             "company": job.get("company", ""),
             "url": job.get("url", ""),
+            "logo_url": job.get("logo_url", ""),
             "description": "",
             "location": "",
             "source": source,
@@ -123,5 +145,5 @@ def parse_gmail_message(html: str, source: str, market: str, debug: bool = False
         })
     if debug:
         for r in results:
-            print(f"    parsed: {r['title']!r} | company={r['company']!r} | url={r['url'][-50:]!r}")
+            print(f"    parsed: {r['title']!r} | company={r['company']!r} | logo={r['logo_url']!r} | url={r['url'][-50:]!r}")
     return results

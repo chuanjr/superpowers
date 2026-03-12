@@ -8,10 +8,13 @@ def test_parse_linkedin_alert():
     # old format: "Title at Company" in single link
     assert entries[0]["title"] == "Backend Engineer"
     assert entries[0]["company"] == "Stripe"
+    assert entries[0]["logo_url"] == "https://media.licdn.com/dms/image/stripe_logo.png"
     assert entries[0]["source"] == "linkedin"
     assert entries[0]["market"] == "sg"
-    # new format: title-only link
+    # new format: title-only link, company·location as second link
     assert entries[1]["title"] == "Product Manager"
+    assert entries[1]["company"] == "Google"
+    assert entries[1]["logo_url"] == "https://media.licdn.com/dms/image/google_logo.png"
 
 def test_parse_indeed_alert():
     html = Path("tests/fixtures/indeed_alert.html").read_text()
@@ -46,3 +49,27 @@ def test_tracking_params_stripped_for_dedup():
     </body></html>"""
     entries = parse_gmail_message(html, source="linkedin", market="tw")
     assert len(entries) == 1
+
+
+def test_company_location_suffix_stripped():
+    """'Company · City, Country' text should only keep company name."""
+    html = """<html><body>
+      <a href="https://www.linkedin.com/comm/jobs/view/111?trk=title">Senior PM</a>
+      <a href="https://www.linkedin.com/comm/jobs/view/111?trk=company">Aesop · Taipei, Taipei City, Taiwan</a>
+    </body></html>"""
+    entries = parse_gmail_message(html, source="linkedin", market="tw")
+    assert len(entries) == 1
+    assert entries[0]["company"] == "Aesop"
+
+
+def test_logo_url_captured():
+    """Logo img before job link should be attached to that job."""
+    html = """<html><body>
+      <img src="https://media.licdn.com/dms/image/anker_logo.png" alt="Anker">
+      <a href="https://www.linkedin.com/comm/jobs/view/222?trk=title">GTM Manager</a>
+      <a href="https://www.linkedin.com/comm/jobs/view/222?trk=company">Anker Innovations · Taipei, Taiwan</a>
+    </body></html>"""
+    entries = parse_gmail_message(html, source="linkedin", market="tw")
+    assert len(entries) == 1
+    assert entries[0]["company"] == "Anker Innovations"
+    assert entries[0]["logo_url"] == "https://media.licdn.com/dms/image/anker_logo.png"

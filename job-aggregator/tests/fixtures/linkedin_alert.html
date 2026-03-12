@@ -1,11 +1,17 @@
 <html><body>
 <table>
-  <!-- old format: title + " at " + company in single link -->
-  <tr><td><a href="https://www.linkedin.com/jobs/view/123">Backend Engineer at Stripe</a></td></tr>
-  <!-- new format (jobalerts-noreply): title-only link, company as separate element -->
-  <tr><td>
-    <a href="https://www.linkedin.com/comm/jobs/view/456/">Product Manager</a>
-    <span class="company-name">Google</span>
-  </td></tr>
+  <!-- old format: title + " at " + company in single link, with logo before -->
+  <tr>
+    <td><img src="https://media.licdn.com/dms/image/stripe_logo.png" alt="Stripe"></td>
+    <td><a href="https://www.linkedin.com/jobs/view/123">Backend Engineer at Stripe</a></td>
+  </tr>
+  <!-- new format: title-only link, company·location as second link with same canonical URL -->
+  <tr>
+    <td><img src="https://media.licdn.com/dms/image/google_logo.png" alt="Google"></td>
+    <td>
+      <a href="https://www.linkedin.com/comm/jobs/view/456/?trk=job_title">Product Manager</a>
+      <a href="https://www.linkedin.com/comm/jobs/view/456/?trk=company_name">Google · Singapore, Central Region, Singapore</a>
+    </td>
+  </tr>
 </table>
 </body></html>

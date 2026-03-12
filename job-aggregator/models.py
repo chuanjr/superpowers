@@ -25,3 +25,4 @@ class Job:
     stage: Optional[str] = None
     fetched_at: str = ""
     posted_at: Optional[str] = None  # ISO-8601 UTC, from RSS published date
+    logo_url: Optional[str] = None

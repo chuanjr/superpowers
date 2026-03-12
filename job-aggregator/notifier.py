@@ -24,8 +24,14 @@ def _job_row(job: Job) -> str:
     location_part = job.location if job.location else ""
     meta_parts = [p for p in [company_part, location_part] if p]
     meta_str = " · ".join(meta_parts)
+    logo_td = ""
+    if job.logo_url:
+        logo_td = f'<td style="padding:12px 4px 12px 8px;width:48px;vertical-align:top"><img src="{job.logo_url}" width="40" height="40" style="object-fit:contain;border-radius:4px" alt=""></td>'
+    else:
+        logo_td = '<td style="padding:12px 4px 12px 8px;width:48px"></td>'
     return f"""
 <tr style="border-bottom:1px solid #eee">
+  {logo_td}
   <td style="padding:12px 8px">
     <strong><a href="{job.url}" style="color:#1a73e8">{job.title}</a></strong><br>
     <span style="color:#555">{meta_str}</span><br>

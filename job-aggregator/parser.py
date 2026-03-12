@@ -20,6 +20,7 @@ def parse_raw_entry(raw: dict) -> Optional[Job]:
         sources=[raw.get("source", "unknown")],
         fetched_at=datetime.now(timezone.utc).isoformat(),
         posted_at=raw.get("posted_at"),
+        logo_url=raw.get("logo_url") or None,
     )
 
 
