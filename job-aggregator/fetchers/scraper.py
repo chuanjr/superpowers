@@ -169,7 +169,17 @@ async def _extract_by_link_pattern(page, href_contains: str, base_url: str, min_
         if text.lower().rstrip(".").endswith(_ARTICLE_SUFFIXES):
             continue
         full_url = href if href.startswith("http") else f"{base_url}{href}"
-        parent = await link.evaluate_handle("el => el.closest('li, article, div[class]') || el.parentElement")
+        # Walk up until we find a container that holds both the job link AND a company link
+        # (closest('div[class]') stops at the first inner div, missing sibling company links)
+        parent = await link.evaluate_handle("""el => {
+            let p = el.parentElement;
+            while (p && p !== document.body) {
+                if (p.tagName === 'LI' || p.tagName === 'ARTICLE') return p;
+                if (p.querySelectorAll('a[href]').length >= 2) return p;
+                p = p.parentElement;
+            }
+            return el.parentElement;
+        }""")
         company = ""
         if parent:
             try:
@@ -333,9 +343,8 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
         try:
-            await page.goto(url, timeout=45000, wait_until="domcontentloaded")
-            # Yourator is a React SPA; wait longer for job cards to render
-            await page.wait_for_timeout(5000)
+            await page.goto(url, timeout=45000, wait_until="networkidle")
+            await page.wait_for_timeout(3000)
 
             # Use JS to extract all anchor data (works even if href="" or href="#")
             raw_links: list[dict] = await page.evaluate("""
