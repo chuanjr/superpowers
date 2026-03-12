@@ -48,6 +48,10 @@ _CAKE_LOCATION = {
 }
 
 _CAKE_SELECTORS = [
+    # New CakeResume DOM (2025+): JobSearchHits list → li children
+    "[class*='JobSearchHits'] li",
+    "[class*='JobSearchHits'] > *",
+    # Legacy / fallback selectors
     "[class*='JobSearchResult_jobItem']",
     "[class*='JobItem']",
     "[class*='job-item']",
@@ -259,8 +263,15 @@ async def _scrape_cakeresume_one(keyword: str, market: str, browser: Browser, se
         page = await context.new_page()
         try:
             await page.goto(url, timeout=45000, wait_until="domcontentloaded")
-            # Give JS framework time to render job listings
-            await page.wait_for_timeout(3000)
+            # Wait for either job listings or an empty/gate indicator to appear.
+            # JobSearchHits renders asynchronously; 3 s is sometimes not enough.
+            try:
+                await page.wait_for_selector(
+                    "[class*='JobSearchHits'], [class*='GuestHint'], [class*='EmptyResults']",
+                    timeout=8000,
+                )
+            except Exception:
+                pass  # fall through to selector loop below
             # Dump HTML once so we can inspect actual page structure
             if keyword not in _cake_dumped:
                 _cake_dumped.add(keyword)

@@ -1,11 +1,18 @@
 #!/usr/bin/env python3
-"""Daily job aggregator — run via cron."""
+"""Daily job aggregator — run via cron.
+
+Usage:
+  python main.py            # fetch + store to jobs.db (no email)
+  python main.py --email    # fetch + store + send email digest for new matches
+  python main.py --debug    # verbose logging
+"""
 import os
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, datetime, timezone, timedelta
 
 DEBUG = "--debug" in sys.argv or os.getenv("DEBUG") == "1"
+SEND_EMAIL = "--email" in sys.argv
 
 
 def _dbg_jobs(label: str, jobs):
@@ -15,17 +22,18 @@ def _dbg_jobs(label: str, jobs):
     for j in jobs:
         print(f"  [{j.sources[0]}] {j.title!r} | company={j.company!r} | posted_at={j.posted_at}")
 
+
 from dotenv import load_dotenv
 load_dotenv()
 
 from config_loader import load_config, ConfigError
-from state import load_seen_ids, save_seen_ids
+from store import init_db, upsert_jobs
 from fetchers.gmail_fetcher import GmailFetcher, extract_html_body
 from fetchers.gmail_parser import parse_gmail_message
 from fetchers.rss_fetcher import RSSFetcher
 from fetchers.scraper import WebScraper
 from parser import parse_all
-from deduplicator import deduplicate, remove_seen
+from deduplicator import deduplicate
 from notifier import build_email_html, build_subject
 from models import Job
 
@@ -59,24 +67,17 @@ _ZH_EXPAND: dict[str, list[str]] = {
     "marketing":       ["行銷"],
     "sales":           ["業務", "銷售"],
     "project manager": ["專案經理", "項目經理"],
+    "growth product manager": ["成長產品經理", "グロースプロダクトマネージャ"],
 }
 
 
 def _rule_filter(jobs: list[Job], targets: dict) -> list[Job]:
     """Keep jobs whose title contains at least one keyword from targets.titles,
-    and reject any job whose title or description contains an exclude_keyword.
-
-    English matching uses the FULL target phrase (not individual words) so that
-    "product manager" does not accidentally match "project manager" or
-    "program manager". CJK expansions are derived from both full phrases and
-    individual words so that Chinese/Japanese titles are correctly matched.
-    """
+    and reject any job whose title or description contains an exclude_keyword."""
     en_phrases = [t.lower() for t in targets.get("titles", [])]
     zh_keywords: list[str] = []
     for phrase in en_phrases:
-        # Expand the full phrase (e.g. "product manager" → 產品經理)
         zh_keywords.extend(_ZH_EXPAND.get(phrase, []))
-        # Expand each word for CJK-only titles (e.g. "pm" → 產品經理)
         for word in phrase.split():
             zh_keywords.extend(_ZH_EXPAND.get(word, []))
     title_keywords = en_phrases + zh_keywords
@@ -149,6 +150,24 @@ def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_ba
     return raw
 
 
+def _check_source_health(
+    sources: dict,
+    gmail_raw: list, rss_raw: list, scraper_raw: list,
+) -> None:
+    """Warn when an enabled source returns zero entries."""
+    gmail_enabled = sources.get("linkedin_gmail") or sources.get("indeed_gmail")
+    if gmail_enabled and len(gmail_raw) == 0:
+        print("[WARN] Gmail sources enabled but returned 0 jobs — check OAuth token or alert settings")
+
+    rss_enabled = sources.get("indeed_rss") or sources.get("104_rss") or sources.get("wellfound")
+    if rss_enabled and len(rss_raw) == 0:
+        print("[WARN] RSS sources enabled but returned 0 jobs — check feed URLs in rss_fetcher.py")
+
+    scraper_enabled = sources.get("cakeresume") or sources.get("yourator") or sources.get("104")
+    if scraper_enabled and len(scraper_raw) == 0:
+        print("[WARN] Scraper sources enabled but returned 0 jobs — check selectors or run with --debug")
+
+
 def main():
     # 1. Load config
     try:
@@ -180,48 +199,47 @@ def main():
     scraper_raw = scraper_fut.result()
     raw_entries = gmail_raw + rss_raw + scraper_raw
 
-    # 3. Parse
+    # 3. Parse + deduplicate cross-platform
     print("[2/4] Parsing and normalizing...")
     print(f"  raw: gmail={len(gmail_raw)}, rss={len(rss_raw)}, scraper={len(scraper_raw)}")
     jobs = parse_all(raw_entries)
     after_parse = len(jobs)
     _dbg_jobs("after parse_all", jobs)
 
-    # 4. Deduplicate (cross-platform + cross-day)
     jobs = deduplicate(jobs)
     after_dedup = len(jobs)
-    seen_ids = load_seen_ids()
-    jobs = remove_seen(jobs, seen_ids)
-    after_remove = len(jobs)
-    print(f"  parse_all: {len(raw_entries)} → {after_parse}  dedup: {after_dedup}  remove_seen: {after_remove} (seen_ids={len(seen_ids)})")
-    _dbg_jobs("after dedup+remove_seen", jobs)
+    print(f"  parse_all: {len(raw_entries)} → {after_parse}  dedup: {after_dedup}")
+    _dbg_jobs("after dedup", jobs)
 
-    # 5. Recency + rule-based filter
+    # Source health warnings (after dedup so counts are post-normalization)
+    _check_source_health(sources, gmail_raw, rss_raw, scraper_raw)
+
+    # 4. Recency filter — drop jobs with a known old posted_at
     before = len(jobs)
     jobs = _recency_filter(jobs, hours=days_back * 24)
-    after_recency = len(jobs)
-    jobs = _rule_filter(jobs, targets)
-    print(f"[3/4] Filter: {before} → recency({days_back}d): {after_recency} → title_match: {len(jobs)}")
+    print(f"[3/4] Filter: recency({days_back}d): {before} → {len(jobs)}")
 
-    # 6. Send email
-    print(f"[4/4] Sending digest ({len(jobs)} matches)...")
-    today = date.today()
-    subject = build_subject(jobs, today)
-    html = build_email_html(jobs, today)
-    gmail.send_email(
-        to=notif["to"],
-        from_=notif["from"],
-        subject=subject,
-        html_body=html,
-    )
+    # 5. Store all surviving jobs to SQLite (upsert — cross-day dedup via PRIMARY KEY)
+    init_db()
+    new_jobs = upsert_jobs(jobs)
+    print(f"  stored: {len(jobs)} total, {len(new_jobs)} new → jobs.db")
 
-    # 7. Update state — only mark SENT jobs as seen (title_match hits).
-    # Scrapers return the same top listings every day; marking everything seen
-    # would permanently block them after the first run.
-    new_seen = seen_ids | {j.id for j in jobs}
-    save_seen_ids(new_seen)
-
-    print(f"Done. {len(jobs)} matches sent to {notif['to']}")
+    # 6. Optional email digest (--email flag)
+    if SEND_EMAIL:
+        matched = _rule_filter(new_jobs, targets)
+        print(f"[4/4] Email: {len(new_jobs)} new → title_match: {len(matched)} → sending...")
+        today = date.today()
+        subject = build_subject(matched, today)
+        html = build_email_html(matched, today)
+        gmail.send_email(
+            to=notif["to"],
+            from_=notif["from"],
+            subject=subject,
+            html_body=html,
+        )
+        print(f"Done. {len(matched)} matches emailed to {notif['to']}")
+    else:
+        print(f"Done. {len(new_jobs)} new jobs stored. Run: python server.py  then open http://localhost:8000")
 
 
 if __name__ == "__main__":

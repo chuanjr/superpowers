@@ -1,0 +1,530 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Job Board</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f4f6f9;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  /* ── Top bar ─────────────────────────────────────────────── */
+  header {
+    background: #fff;
+    border-bottom: 1px solid #e5e7eb;
+    padding: 14px 24px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    box-shadow: 0 1px 4px rgba(0,0,0,.06);
+  }
+  header h1 { font-size: 1.15rem; font-weight: 700; color: #1a1a2e; white-space: nowrap; }
+  header h1 span { color: #4f8ef7; }
+
+  #search {
+    flex: 1;
+    max-width: 420px;
+    padding: 8px 14px;
+    border: 1.5px solid #d1d5db;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    outline: none;
+    transition: border-color .15s;
+  }
+  #search:focus { border-color: #4f8ef7; }
+
+  #stats-bar {
+    margin-left: auto;
+    font-size: 0.8rem;
+    color: #6b7280;
+    white-space: nowrap;
+  }
+
+  /* ── Layout ──────────────────────────────────────────────── */
+  .layout {
+    display: flex;
+    gap: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 20px 16px;
+  }
+
+  /* ── Sidebar filters ─────────────────────────────────────── */
+  aside {
+    flex: 0 0 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .filter-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .filter-card h3 {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #9ca3af;
+    margin-bottom: 10px;
+  }
+
+  .filter-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: #374151;
+    user-select: none;
+  }
+  .filter-option input[type=checkbox],
+  .filter-option input[type=radio] {
+    accent-color: #4f8ef7;
+    width: 15px; height: 15px;
+    cursor: pointer;
+  }
+  .filter-option .count {
+    margin-left: auto;
+    font-size: 0.75rem;
+    color: #9ca3af;
+  }
+
+  .sort-select {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1.5px solid #d1d5db;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    background: #fff;
+    cursor: pointer;
+    outline: none;
+  }
+  .sort-select:focus { border-color: #4f8ef7; }
+
+  /* ── Main content ────────────────────────────────────────── */
+  main { flex: 1; min-width: 0; }
+
+  #result-count {
+    font-size: 0.82rem;
+    color: #6b7280;
+    margin-bottom: 12px;
+    padding-left: 2px;
+  }
+
+  /* ── Job card ────────────────────────────────────────────── */
+  .job-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 14px 18px;
+    margin-bottom: 10px;
+    transition: box-shadow .12s, border-color .12s;
+    display: flex;
+    gap: 14px;
+    align-items: flex-start;
+  }
+  .job-card:hover {
+    box-shadow: 0 3px 12px rgba(0,0,0,.09);
+    border-color: #c7d7fd;
+  }
+
+  .logo {
+    flex: 0 0 40px;
+    width: 40px; height: 40px;
+    border-radius: 6px;
+    object-fit: contain;
+    border: 1px solid #f0f0f0;
+    background: #f9fafb;
+  }
+  .logo-placeholder {
+    flex: 0 0 40px;
+    width: 40px; height: 40px;
+    border-radius: 6px;
+    background: #f3f4f6;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    color: #d1d5db;
+  }
+
+  .job-body { flex: 1; min-width: 0; }
+
+  .job-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 3px;
+  }
+
+  .job-title {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: #1a1a2e;
+    text-decoration: none;
+  }
+  .job-title:hover { color: #4f8ef7; text-decoration: underline; }
+
+  .badge-new {
+    font-size: 0.65rem;
+    font-weight: 700;
+    background: #dcfce7;
+    color: #16a34a;
+    padding: 2px 6px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: .04em;
+  }
+
+  .job-meta {
+    font-size: 0.82rem;
+    color: #6b7280;
+    margin-bottom: 6px;
+  }
+  .job-meta .company { font-weight: 500; color: #374151; }
+  .job-meta .sep { margin: 0 5px; color: #d1d5db; }
+
+  .job-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+  }
+
+  .tag {
+    display: inline-block;
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 500;
+  }
+  .tag-market-tw { background: #fef3c7; color: #92400e; }
+  .tag-market-jp { background: #fee2e2; color: #991b1b; }
+  .tag-market-sg { background: #dbeafe; color: #1e40af; }
+  .tag-market-unknown { background: #f3f4f6; color: #6b7280; }
+
+  .tag-source {
+    background: #f3f4f6;
+    color: #6b7280;
+  }
+
+  .tag-date {
+    background: transparent;
+    color: #9ca3af;
+    padding-left: 0;
+    font-size: 0.72rem;
+  }
+
+  /* ── Empty state ─────────────────────────────────────────── */
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: #9ca3af;
+  }
+  .empty .icon { font-size: 3rem; margin-bottom: 12px; }
+  .empty p { font-size: 0.95rem; }
+
+  /* ── Loading ─────────────────────────────────────────────── */
+  .loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: #9ca3af;
+    font-size: 0.9rem;
+  }
+
+  @media (max-width: 640px) {
+    aside { display: none; }
+    .layout { padding: 12px 10px; }
+    header { flex-wrap: wrap; gap: 10px; }
+    #search { max-width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Job <span>Board</span></h1>
+  <input id="search" type="search" placeholder="Search title, company…" autocomplete="off">
+  <div id="stats-bar">loading…</div>
+</header>
+
+<div class="layout">
+
+  <aside>
+    <!-- Market filter -->
+    <div class="filter-card">
+      <h3>Market</h3>
+      <div id="market-filters"></div>
+    </div>
+
+    <!-- Source filter -->
+    <div class="filter-card">
+      <h3>Source</h3>
+      <div id="source-filters"></div>
+    </div>
+
+    <!-- Date added -->
+    <div class="filter-card">
+      <h3>Date Added</h3>
+      <label class="filter-option"><input type="radio" name="days" value="0" checked> All time</label>
+      <label class="filter-option"><input type="radio" name="days" value="1"> Last 24 h</label>
+      <label class="filter-option"><input type="radio" name="days" value="7"> Last 7 days</label>
+      <label class="filter-option"><input type="radio" name="days" value="30"> Last 30 days</label>
+    </div>
+
+    <!-- Sort -->
+    <div class="filter-card">
+      <h3>Sort by</h3>
+      <select id="sort-select" class="sort-select">
+        <option value="newest">Newest first</option>
+        <option value="oldest">Oldest first</option>
+        <option value="title">Title A→Z</option>
+        <option value="company">Company A→Z</option>
+      </select>
+    </div>
+  </aside>
+
+  <main>
+    <div id="result-count"></div>
+    <div id="job-list"><div class="loading">Loading jobs…</div></div>
+  </main>
+
+</div>
+
+<script>
+  let ALL_JOBS = [];
+  const NOW = Date.now();
+
+  // ── Fetch data ────────────────────────────────────────────
+  async function loadJobs() {
+    try {
+      const res = await fetch('/api/jobs');
+      ALL_JOBS = await res.json();
+      buildFilters();
+      renderJobs();
+    } catch (e) {
+      document.getElementById('job-list').innerHTML =
+        '<div class="empty"><div class="icon">⚠️</div><p>Failed to load jobs. Is the server running?</p></div>';
+    }
+  }
+
+  // ── Build dynamic filter checkboxes ───────────────────────
+  function buildFilters() {
+    const markets = [...new Set(ALL_JOBS.map(j => j.market).filter(Boolean))].sort();
+    const sources = [...new Set(ALL_JOBS.flatMap(j => j.sources || []))].sort();
+
+    const mkCounts = {};
+    const srcCounts = {};
+    ALL_JOBS.forEach(j => {
+      if (j.market) mkCounts[j.market] = (mkCounts[j.market] || 0) + 1;
+      (j.sources || []).forEach(s => { srcCounts[s] = (srcCounts[s] || 0) + 1; });
+    });
+
+    document.getElementById('market-filters').innerHTML = markets.map(m =>
+      `<label class="filter-option">
+        <input type="checkbox" class="mkt-cb" value="${m}" checked>
+        ${m.toUpperCase()}
+        <span class="count">${mkCounts[m] || 0}</span>
+      </label>`
+    ).join('');
+
+    document.getElementById('source-filters').innerHTML = sources.map(s =>
+      `<label class="filter-option">
+        <input type="checkbox" class="src-cb" value="${s}" checked>
+        ${s}
+        <span class="count">${srcCounts[s] || 0}</span>
+      </label>`
+    ).join('');
+
+    // Stats bar
+    document.getElementById('stats-bar').textContent =
+      `${ALL_JOBS.length} total · ${markets.join(' / ')}`;
+
+    // Attach events
+    document.querySelectorAll('.mkt-cb, .src-cb').forEach(cb =>
+      cb.addEventListener('change', renderJobs)
+    );
+  }
+
+  // ── Get current filter state ──────────────────────────────
+  function getFilters() {
+    const q = document.getElementById('search').value.toLowerCase().trim();
+
+    const markets = [...document.querySelectorAll('.mkt-cb:checked')].map(c => c.value);
+    const sources = [...document.querySelectorAll('.src-cb:checked')].map(c => c.value);
+
+    const daysVal = document.querySelector('input[name=days]:checked')?.value || '0';
+    const days = parseInt(daysVal, 10);
+
+    const sort = document.getElementById('sort-select').value;
+
+    return { q, markets, sources, days, sort };
+  }
+
+  // ── Filter + sort ─────────────────────────────────────────
+  function applyFilters(jobs, { q, markets, sources, days, sort }) {
+    let filtered = jobs;
+
+    if (markets.length) {
+      filtered = filtered.filter(j => markets.includes(j.market));
+    }
+
+    if (sources.length) {
+      filtered = filtered.filter(j =>
+        (j.sources || []).some(s => sources.includes(s))
+      );
+    }
+
+    if (days > 0) {
+      const cutoff = NOW - days * 86400 * 1000;
+      filtered = filtered.filter(j => {
+        if (!j.first_seen_at) return true;
+        return new Date(j.first_seen_at).getTime() >= cutoff;
+      });
+    }
+
+    if (q) {
+      filtered = filtered.filter(j =>
+        (j.title || '').toLowerCase().includes(q) ||
+        (j.company || '').toLowerCase().includes(q)
+      );
+    }
+
+    // Sort
+    filtered = [...filtered];
+    if (sort === 'newest') {
+      filtered.sort((a, b) => (b.first_seen_at || '').localeCompare(a.first_seen_at || ''));
+    } else if (sort === 'oldest') {
+      filtered.sort((a, b) => (a.first_seen_at || '').localeCompare(b.first_seen_at || ''));
+    } else if (sort === 'title') {
+      filtered.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    } else if (sort === 'company') {
+      filtered.sort((a, b) => (a.company || '').localeCompare(b.company || ''));
+    }
+
+    return filtered;
+  }
+
+  // ── Render ────────────────────────────────────────────────
+  function isNew(job) {
+    if (!job.first_seen_at) return false;
+    return NOW - new Date(job.first_seen_at).getTime() < 24 * 3600 * 1000;
+  }
+
+  function marketTagClass(market) {
+    const m = (market || '').toLowerCase();
+    if (m === 'tw') return 'tag-market-tw';
+    if (m === 'jp') return 'tag-market-jp';
+    if (m === 'sg') return 'tag-market-sg';
+    return 'tag-market-unknown';
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const diff = Math.floor((NOW - d.getTime()) / 1000);
+    if (diff < 3600)   return `${Math.floor(diff / 60)}m ago`;
+    if (diff < 86400)  return `${Math.floor(diff / 3600)}h ago`;
+    if (diff < 604800) return `${Math.floor(diff / 86400)}d ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function renderCard(job) {
+    const newBadge = isNew(job) ? '<span class="badge-new">New</span>' : '';
+
+    const logoHtml = job.logo_url
+      ? `<img class="logo" src="${escHtml(job.logo_url)}" alt="" loading="lazy">`
+      : `<div class="logo-placeholder">🏢</div>`;
+
+    const market = (job.market || '').toUpperCase();
+    const marketTag = market
+      ? `<span class="tag ${marketTagClass(job.market)}">${escHtml(market)}</span>`
+      : '';
+
+    const sourceTags = (job.sources || []).map(s =>
+      `<span class="tag tag-source">${escHtml(s)}</span>`
+    ).join('');
+
+    const dateStr = fmtDate(job.first_seen_at);
+    const dateTag = dateStr ? `<span class="tag tag-date">${escHtml(dateStr)}</span>` : '';
+
+    const company = job.company ? `<span class="company">${escHtml(job.company)}</span>` : '';
+    const location = job.location ? `<span class="sep">·</span>${escHtml(job.location)}` : '';
+
+    return `
+<div class="job-card">
+  ${logoHtml}
+  <div class="job-body">
+    <div class="job-header">
+      <a class="job-title" href="${escHtml(job.url || '#')}" target="_blank" rel="noopener">
+        ${escHtml(job.title || '—')}
+      </a>
+      ${newBadge}
+    </div>
+    <div class="job-meta">${company}${location}</div>
+    <div class="job-tags">
+      ${marketTag}
+      ${sourceTags}
+      ${dateTag}
+    </div>
+  </div>
+</div>`;
+  }
+
+  function renderJobs() {
+    const filters = getFilters();
+    const filtered = applyFilters(ALL_JOBS, filters);
+
+    document.getElementById('result-count').textContent =
+      `${filtered.length} job${filtered.length !== 1 ? 's' : ''}` +
+      (filtered.length < ALL_JOBS.length ? ` of ${ALL_JOBS.length}` : '');
+
+    const container = document.getElementById('job-list');
+    if (!filtered.length) {
+      container.innerHTML = `
+<div class="empty">
+  <div class="icon">🔍</div>
+  <p>No jobs match your filters.</p>
+</div>`;
+      return;
+    }
+
+    container.innerHTML = filtered.map(renderCard).join('');
+  }
+
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ── Wire up events ────────────────────────────────────────
+  document.getElementById('search').addEventListener('input', renderJobs);
+  document.getElementById('sort-select').addEventListener('change', renderJobs);
+  document.querySelectorAll('input[name=days]').forEach(r =>
+    r.addEventListener('change', renderJobs)
+  );
+
+  // ── Boot ──────────────────────────────────────────────────
+  loadJobs();
+</script>
+
+</body>
+</html>
