@@ -219,15 +219,20 @@ def main():
     jobs = _recency_filter(jobs, hours=days_back * 24)
     print(f"[3/4] Filter: recency({days_back}d): {before} → {len(jobs)}")
 
-    # 5. Store all surviving jobs to SQLite (upsert — cross-day dedup via PRIMARY KEY)
+    # 5. Title filter — only store jobs matching configured targets
+    before = len(jobs)
+    jobs = _rule_filter(jobs, targets)
+    print(f"  title_filter: {before} → {len(jobs)}")
+
+    # 6. Store matching jobs to SQLite (upsert — cross-day dedup via PRIMARY KEY)
     init_db()
     new_jobs = upsert_jobs(jobs)
     print(f"  stored: {len(jobs)} total, {len(new_jobs)} new → jobs.db")
 
-    # 6. Optional email digest (--email flag)
+    # 7. Optional email digest (--email flag)
     if SEND_EMAIL:
-        matched = _rule_filter(new_jobs, targets)
-        print(f"[4/4] Email: {len(new_jobs)} new → title_match: {len(matched)} → sending...")
+        matched = new_jobs  # already filtered above
+        print(f"[4/4] Email: {len(matched)} new matches → sending...")
         today = date.today()
         subject = build_subject(matched, today)
         html = build_email_html(matched, today)
