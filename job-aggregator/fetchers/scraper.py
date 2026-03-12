@@ -43,7 +43,7 @@ _CONCURRENCY = 3
 
 _CAKE_LOCATION = {
     "tw": "Taipei City-Taiwan",
-    "sg": "Singapore",
+    "sg": "Republic of Singapore",
     "jp": "Tokyo Metropolis-Japan",
 }
 
@@ -275,7 +275,7 @@ async def _scrape_cakeresume_one(keyword: str, market: str, browser: Browser, se
                     print(f"[DEBUG] CakeResume '{keyword}': not logged in — run setup_cakeresume_auth.py to enable")
                 return results
             empty = await page.query_selector("[class*='EmptyResults']")
-            if empty:
+            if empty and await empty.is_visible():
                 print(f"[DEBUG] CakeResume '{keyword}': no matching jobs")
                 return results
             selector = await _wait_for_any(page, _CAKE_SELECTORS)
