@@ -397,14 +397,8 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
         page = await context.new_page()
         try:
             await page.goto(url, timeout=45000, wait_until="domcontentloaded")
-            # Wait for job listing container or empty state to appear
-            try:
-                await page.wait_for_selector(
-                    ".search-result__cards, .search-records-section, [class*='search-result'], [class*='job-list'], [class*='JobList'], main",
-                    timeout=8000,
-                )
-            except Exception:
-                pass  # fall through and try extracting anyway
+            # Yourator is a React SPA; wait for job cards to render
+            await page.wait_for_timeout(5000)
 
             # Use JS to extract all anchor data (works even if href="" or href="#")
             raw_links: list[dict] = await page.evaluate("""
