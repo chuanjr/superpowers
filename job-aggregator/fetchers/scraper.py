@@ -227,7 +227,11 @@ async def _scrape_104_one(keyword: str, browser: Browser, sem: asyncio.Semaphore
     async with sem:
         results = []
         kw = quote_plus(keyword)
-        url = f"https://www.104.com.tw/jobs/search/?keyword={kw}&order=15&mode=s"
+        url = (
+            f"https://www.104.com.tw/jobs/search/?area=6001001000"
+            f"&jobcat=2004003009&jobsource=joblist_search&keyword={kw}"
+            f"&mode=s&page=1&order=16&searchJobs=1&isnew=0&indcat=1001001000"
+        )
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
         try:
