@@ -121,6 +121,15 @@ _UI_SKIP_LOWER = frozenset({
     "jobs similar to", "apply now",
 })
 
+# Location suffixes — text ending with these is a place, not a job title
+_LOCATION_SUFFIXES = ("台灣", ", taiwan", ", japan", ", singapore", "metropolis, japan",
+                      "metropolis, korea", "city, taiwan", ", 台灣", "japan", "singapore")
+
+
+def _is_location_text(text: str) -> bool:
+    t = text.lower().strip()
+    return any(t.endswith(suf) for suf in _LOCATION_SUFFIXES)
+
 
 async def _extract_by_link_pattern(page, href_contains: str, base_url: str, min_path_depth: int = 2) -> list[dict]:
     # Prefer scoping to main content area to exclude nav/footer links
@@ -148,6 +157,9 @@ async def _extract_by_link_pattern(page, href_contains: str, base_url: str, min_
         if not text or len(text) < 4 or len(text) > 120:
             continue
         if text.lower() in _UI_SKIP_LOWER:
+            continue
+        # Skip location-only strings like "中正區, 台北市, 台灣" or "Tokyo Metropolis, Japan"
+        if _is_location_text(text):
             continue
         # Skip category/navigation links like "Product Manager Jobs in Taiwan"
         if text.lower().rstrip(".").endswith(_ARTICLE_SUFFIXES):
@@ -256,10 +268,14 @@ async def _scrape_104_one(keyword: str, browser: Browser, sem: asyncio.Semaphore
                 )
                 link_el = await item.query_selector("a")
                 title = (await title_el.inner_text() if title_el else "").strip()
+                # Strip embedded newlines (ad/banner text); skip if multi-line or too long
+                title = title.split("\n")[0].strip()
                 company = (await company_el.inner_text() if company_el else "").strip()
+                # 104 company element may include extra text; take first line only
+                company = company.split("\n")[0].strip()
                 href = await link_el.get_attribute("href") if link_el else ""
                 full_url = href if (not href or href.startswith("http")) else f"https://www.104.com.tw{href}"
-                if title and len(title) >= 3 and title.lower() not in _UI_SKIP_LOWER:
+                if title and 3 <= len(title) <= 100 and title.lower() not in _UI_SKIP_LOWER:
                     results.append({"title": title, "company": company, "url": full_url,
                                     "description": "", "location": "Taiwan",
                                     "source": "104", "market": "tw"})
@@ -279,28 +295,34 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
             await page.goto(url, timeout=45000, wait_until="domcontentloaded")
             await page.wait_for_timeout(3000)
 
-            # Yourator job URLs follow /companies/{company}/jobs/{id} pattern.
-            # Scope to .search-result__cards to avoid nav/footer links.
+            # Scope to cards container; fall back to whole page if not found
             scope = await page.query_selector(".search-result__cards, .search-records-section")
-            if scope:
-                links = await scope.query_selector_all("a[href*='/companies/'][href*='/jobs/']")
-            else:
-                links = await page.query_selector_all("a[href*='/companies/'][href*='/jobs/']")
+            links = await (scope if scope else page).query_selector_all("a[href]")
 
-            seen = set()
+            seen: set[str] = set()
             for link in links:
                 href = await link.get_attribute("href") or ""
                 if not href or href in seen:
                     continue
+                # Must be a deep path (job detail pages have ≥2 segments)
+                path = href.split("?")[0].rstrip("/")
+                segments = [s for s in path.split("/") if s]
+                if len(segments) < 2:
+                    continue
                 seen.add(href)
                 full_url = href if href.startswith("http") else f"https://www.yourator.co{href}"
-                # Extract company from URL: /companies/{company}/jobs/{id}
-                parts = href.split("/")
-                company_from_url = parts[2] if len(parts) > 2 else ""
                 text = (await link.inner_text()).strip()
-                if not text or len(text) < 3 or text.lower() in _UI_SKIP_LOWER:
+                if not text or len(text) < 3 or len(text) > 100:
                     continue
-                # Try to get company name from a sibling element
+                if text.lower() in _UI_SKIP_LOWER or _is_location_text(text):
+                    continue
+                # Extract company slug from URL if format is /companies/{slug}/jobs/{id}
+                company_from_url = ""
+                if "companies" in segments:
+                    idx = segments.index("companies")
+                    if idx + 1 < len(segments):
+                        company_from_url = segments[idx + 1]
+                # Try to get display company name from sibling element
                 parent = await link.evaluate_handle("el => el.closest('li, article, div[class]') || el.parentElement")
                 company = ""
                 if parent:
@@ -309,7 +331,7 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
                             "[class*='company'], [class*='Company'], [class*='brand']"
                         )
                         if company_el:
-                            company = (await company_el.inner_text()).strip()
+                            company = (await company_el.inner_text()).strip().split("\n")[0]
                     except Exception:
                         pass
                 results.append(normalize_yourator_item(
