@@ -155,6 +155,9 @@ async def _extract_by_link_pattern(page, href_contains: str, base_url: str, min_
             continue
         seen.add(href)
         text = (await link.inner_text()).strip()
+        # Multi-line inner_text means the <a> wraps a card/banner, not a simple job title
+        if "\n" in text:
+            text = text.split("\n")[0].strip()
         if not text or len(text) < 4 or len(text) > 120:
             continue
         if text.lower() in _UI_SKIP_LOWER:
@@ -375,13 +378,19 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
 
                 if not href or href in seen or href.startswith("#") or href.startswith("javascript"):
                     continue
-                # Must be a deep path (job detail pages have ≥2 segments)
+                # Yourator job detail pages: /companies/{slug}/jobs/{id} (depth=4)
+                # Company pages: /companies/{slug} (depth=2) — skip those
                 path = href.split("?")[0].rstrip("/")
                 segments = [s for s in path.split("/") if s]
-                if len(segments) < 2:
+                if "jobs" not in segments:
+                    continue
+                if len(segments) < 3:
                     continue
                 seen.add(href)
 
+                # Strip multi-line text (company cards have location/industry on extra lines)
+                if "\n" in text:
+                    text = text.split("\n")[0].strip()
                 if not text or len(text) < 3 or len(text) > 100:
                     continue
                 if text.lower() in _UI_SKIP_LOWER or _is_location_text(text):
@@ -414,7 +423,8 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
 
 async def _scrape_yourator_one(keyword: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
     kw = quote_plus(keyword)
-    url = f"https://www.yourator.co/search?s={kw}"
+    # /jobs?term= shows individual job listings; /search?s= shows company cards
+    url = f"https://www.yourator.co/jobs?term={kw}"
     return await _scrape_yourator_page(url, keyword, browser, sem)
 
 
