@@ -30,6 +30,7 @@ _CAKE_SELECTORS = [
 
 _104_SELECTORS = [
     "article.js-job-item",
+    "li.list-group-item",
     "[class*='job-list-item']",
     "[class*='JobListItem']",
     "article[class*='job']",
@@ -169,11 +170,28 @@ async def _extract_by_link_pattern(page, href_contains: str, base_url: str, min_
         company = ""
         if parent:
             try:
+                # 1. Try class-based company selector first
                 company_el = await parent.query_selector(
                     "[class*='company'], [class*='Company'], [class*='brand'], [class*='Brand']"
                 )
                 if company_el:
-                    company = (await company_el.inner_text()).strip()
+                    company = (await company_el.inner_text()).strip().split("\n")[0]
+                else:
+                    # 2. Fallback: find any <a> in parent that does NOT link to the same job URL
+                    #    (e.g. 104 company links go to /company/ path)
+                    sibling_links = await parent.query_selector_all("a[href]")
+                    for sl in sibling_links:
+                        sl_href = await sl.get_attribute("href") or ""
+                        if sl_href == href or not sl_href or sl_href.startswith("#"):
+                            continue
+                        # Skip if it's another job listing link
+                        sl_path = sl_href.split("?")[0].rstrip("/")
+                        if href_contains in sl_path:
+                            continue
+                        sl_text = (await sl.inner_text()).strip().split("\n")[0]
+                        if sl_text and 2 <= len(sl_text) <= 60 and sl_text.lower() not in _UI_SKIP_LOWER:
+                            company = sl_text
+                            break
             except Exception:
                 pass
         results.append({"title": text, "company": company, "url": full_url})
@@ -249,7 +267,6 @@ async def _scrape_104_one(keyword: str, browser: Browser, sem: asyncio.Semaphore
         try:
             await page.goto(url, timeout=45000, wait_until="domcontentloaded")
             await page.wait_for_timeout(3000)
-            await _dump_html(page, f"104_{kw}")  # dump to inspect actual class names
             selector = await _wait_for_any(page, _104_SELECTORS)
             if not selector:
                 items_via_links = await _extract_by_link_pattern(page, "/job/", "https://www.104.com.tw", min_path_depth=2)
@@ -260,20 +277,35 @@ async def _scrape_104_one(keyword: str, browser: Browser, sem: asyncio.Semaphore
                                         "source": "104", "market": "tw"})
                 return results
             items = await page.query_selector_all(selector)
-            for item in items[:20]:
+            for item in items[:25]:
+                # Skip ad/adsmart items — they have irrelevant content
+                item_class = await item.get_attribute("class") or ""
+                if "adsmart" in item_class or "ad-" in item_class:
+                    continue
                 title_el = await item.query_selector(
-                    "h2, h3, [class*='title'], [class*='Title'], .job-name, [class*='job-name']"
+                    "h2, h3, [class*='title'], [class*='Title'], .job-name, [class*='job-name'], p.b2"
                 )
-                company_el = await item.query_selector(
-                    "[class*='company'], [class*='Company'], .company-name"
-                )
-                link_el = await item.query_selector("a")
+                link_el = await item.query_selector("a[href*='/job/'], a[href]")
                 title = (await title_el.inner_text() if title_el else "").strip()
-                # Strip embedded newlines (ad/banner text); skip if multi-line or too long
+                # Strip embedded newlines (ad/banner text); take first line only
                 title = title.split("\n")[0].strip()
-                company = (await company_el.inner_text() if company_el else "").strip()
-                # 104 company element may include extra text; take first line only
-                company = company.split("\n")[0].strip()
+                # Try company: class-based first, then sibling <a> not going to /job/
+                company = ""
+                company_el = await item.query_selector(
+                    "[class*='company'], [class*='Company'], .b-block--company"
+                )
+                if company_el:
+                    company = (await company_el.inner_text()).strip().split("\n")[0]
+                else:
+                    all_links = await item.query_selector_all("a[href]")
+                    for al in all_links:
+                        al_href = await al.get_attribute("href") or ""
+                        if not al_href or "/job/" in al_href or al_href.startswith("#"):
+                            continue
+                        al_text = (await al.inner_text()).strip().split("\n")[0]
+                        if al_text and 2 <= len(al_text) <= 60 and al_text.lower() not in _UI_SKIP_LOWER:
+                            company = al_text
+                            break
                 href = await link_el.get_attribute("href") if link_el else ""
                 full_url = href if (not href or href.startswith("http")) else f"https://www.104.com.tw{href}"
                 if title and 3 <= len(title) <= 100 and title.lower() not in _UI_SKIP_LOWER:
@@ -283,6 +315,11 @@ async def _scrape_104_one(keyword: str, browser: Browser, sem: asyncio.Semaphore
         except Exception as e:
             print(f"[WARN] 104 '{keyword}': {e}")
         finally:
+            if not results:
+                try:
+                    await _dump_html(page, f"104_{kw}")
+                except Exception:
+                    pass
             await context.close()
         return results
 
@@ -294,16 +331,49 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
         page = await context.new_page()
         try:
             await page.goto(url, timeout=45000, wait_until="domcontentloaded")
-            await page.wait_for_timeout(3000)
+            # Yourator is a React SPA; wait longer for job cards to render
+            await page.wait_for_timeout(5000)
 
-            # Scope to cards container; fall back to whole page if not found
-            scope = await page.query_selector(".search-result__cards, .search-records-section")
-            links = await (scope if scope else page).query_selector_all("a[href]")
+            # Use JS to extract all anchor data (works even if href="" or href="#")
+            raw_links: list[dict] = await page.evaluate("""
+                () => {
+                    const scope = document.querySelector(
+                        '.search-result__cards, .search-records-section, [class*="search-result"], main'
+                    ) || document.body;
+                    return Array.from(scope.querySelectorAll('a')).map(a => {
+                        // Walk up to find a card container that might hold company info
+                        let card = a.closest('li, article, [class*="card"], [class*="item"], [class*="result"]');
+                        let company = '';
+                        if (card) {
+                            let companyEl = card.querySelector(
+                                '[class*="company"], [class*="Company"], [class*="brand"], [class*="Brand"]'
+                            );
+                            if (!companyEl) {
+                                // Try second <a> in the card as company link
+                                let cardLinks = Array.from(card.querySelectorAll('a'));
+                                if (cardLinks.length > 1 && cardLinks[1] !== a) {
+                                    company = cardLinks[1].innerText.trim().split('\\n')[0];
+                                }
+                            } else {
+                                company = companyEl.innerText.trim().split('\\n')[0];
+                            }
+                        }
+                        return {
+                            href: a.getAttribute('href') || '',
+                            text: a.innerText.trim(),
+                            company: company
+                        };
+                    });
+                }
+            """)
 
             seen: set[str] = set()
-            for link in links:
-                href = await link.get_attribute("href") or ""
-                if not href or href in seen:
+            for item in raw_links:
+                href = item.get("href", "")
+                text = item.get("text", "").strip()
+                company = item.get("company", "").strip()
+
+                if not href or href in seen or href.startswith("#") or href.startswith("javascript"):
                     continue
                 # Must be a deep path (job detail pages have ≥2 segments)
                 path = href.split("?")[0].rstrip("/")
@@ -311,32 +381,22 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
                 if len(segments) < 2:
                     continue
                 seen.add(href)
-                full_url = href if href.startswith("http") else f"https://www.yourator.co{href}"
-                text = (await link.inner_text()).strip()
+
                 if not text or len(text) < 3 or len(text) > 100:
                     continue
                 if text.lower() in _UI_SKIP_LOWER or _is_location_text(text):
                     continue
+
+                full_url = href if href.startswith("http") else f"https://www.yourator.co{href}"
+
                 # Extract company slug from URL if format is /companies/{slug}/jobs/{id}
-                company_from_url = ""
-                if "companies" in segments:
+                if not company and "companies" in segments:
                     idx = segments.index("companies")
                     if idx + 1 < len(segments):
-                        company_from_url = segments[idx + 1]
-                # Try to get display company name from sibling element
-                parent = await link.evaluate_handle("el => el.closest('li, article, div[class]') || el.parentElement")
-                company = ""
-                if parent:
-                    try:
-                        company_el = await parent.query_selector(
-                            "[class*='company'], [class*='Company'], [class*='brand']"
-                        )
-                        if company_el:
-                            company = (await company_el.inner_text()).strip().split("\n")[0]
-                    except Exception:
-                        pass
+                        company = segments[idx + 1].replace("-", " ").title()
+
                 results.append(normalize_yourator_item(
-                    {"job_title": text, "company_name": company or company_from_url, "job_url": full_url},
+                    {"job_title": text, "company_name": company, "job_url": full_url},
                     market="tw"
                 ))
                 if len(results) >= 20:
