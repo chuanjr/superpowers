@@ -117,6 +117,7 @@ def _detect_market(sender: str, subject: str, markets: list[str]) -> str:
 
 def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_back: int = 7) -> list[dict]:
     raw = []
+    source_counts: dict[str, int] = {}
     for msg in gmail.fetch_alert_messages(sources, days_back=days_back):
         html = extract_html_body(msg)
         headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
@@ -126,6 +127,7 @@ def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_ba
         market = _detect_market(sender, subject, markets)
         is_pm_email = "product manager" in subject.lower() or "growth" in subject.lower()
         jobs = parse_gmail_message(html, source=source, market=market, debug=DEBUG and is_pm_email)
+        source_counts[source] = source_counts.get(source, 0) + len(jobs)
         if DEBUG:
             print(f"[DEBUG] Gmail: {subject[:70]!r} → {len(jobs)} jobs (html={len(html)}B)")
             if len(jobs) == 0 and is_pm_email:
@@ -134,6 +136,9 @@ def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_ba
                 dump_path.write_text(html, encoding="utf-8")
                 print(f"[DEBUG]   → dumped HTML to {dump_path}")
         raw.extend(jobs)
+    if source_counts:
+        breakdown = ", ".join(f"{s}={c}" for s, c in sorted(source_counts.items()))
+        print(f"  gmail breakdown: {breakdown}")
     return raw
 
 

@@ -28,6 +28,15 @@ _CAKE_SELECTORS = [
     "li[class*='job']",
 ]
 
+_104_SELECTORS = [
+    "article.js-job-item",
+    "[class*='job-list-item']",
+    "[class*='JobListItem']",
+    "article[class*='job']",
+    "li[class*='job']",
+    "[class*='job-card']",
+]
+
 _YOURATOR_SELECTORS = [
     # /search page
     "[class*='JobSearchItem']",
@@ -214,6 +223,49 @@ async def _scrape_cakeresume_one(keyword: str, market: str, browser: Browser, se
         return results
 
 
+async def _scrape_104_one(keyword: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
+    async with sem:
+        results = []
+        kw = quote_plus(keyword)
+        url = f"https://www.104.com.tw/jobs/search/?keyword={kw}&order=15&mode=s"
+        context = await browser.new_context(user_agent=_UA)
+        page = await context.new_page()
+        try:
+            await page.goto(url, timeout=45000, wait_until="domcontentloaded")
+            await page.wait_for_timeout(3000)
+            selector = await _wait_for_any(page, _104_SELECTORS)
+            if not selector:
+                items_via_links = await _extract_by_link_pattern(page, "/job/", "https://www.104.com.tw", min_path_depth=2)
+                for r in items_via_links[:20]:
+                    if r.get("title"):
+                        results.append({"title": r["title"], "company": r.get("company", ""),
+                                        "url": r["url"], "description": "", "location": "Taiwan",
+                                        "source": "104", "market": "tw"})
+                return results
+            items = await page.query_selector_all(selector)
+            for item in items[:20]:
+                title_el = await item.query_selector(
+                    "h2, h3, [class*='title'], [class*='Title'], .job-name, [class*='job-name']"
+                )
+                company_el = await item.query_selector(
+                    "[class*='company'], [class*='Company'], .company-name"
+                )
+                link_el = await item.query_selector("a")
+                title = (await title_el.inner_text() if title_el else "").strip()
+                company = (await company_el.inner_text() if company_el else "").strip()
+                href = await link_el.get_attribute("href") if link_el else ""
+                full_url = href if (not href or href.startswith("http")) else f"https://www.104.com.tw{href}"
+                if title and len(title) >= 3 and title.lower() not in _UI_SKIP_LOWER:
+                    results.append({"title": title, "company": company, "url": full_url,
+                                    "description": "", "location": "Taiwan",
+                                    "source": "104", "market": "tw"})
+        except Exception as e:
+            print(f"[WARN] 104 '{keyword}': {e}")
+        finally:
+            await context.close()
+        return results
+
+
 async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
     async with sem:
         results = []
@@ -276,9 +328,12 @@ async def _scrape_all(sources: dict, titles: list[str], markets: list[str]) -> l
                 browsers["cake"] = await p.chromium.launch(headless=True)
             if sources.get("yourator"):
                 browsers["yourator"] = await p.chromium.launch(headless=True)
+            if sources.get("104"):
+                browsers["104"] = await p.chromium.launch(headless=True)
 
             cake_sem = asyncio.Semaphore(_CONCURRENCY)
             yourator_sem = asyncio.Semaphore(_CONCURRENCY)
+            sem_104 = asyncio.Semaphore(_CONCURRENCY)
             tasks = []
 
             yourator_url = sources.get("yourator_url") if isinstance(sources, dict) else None
@@ -291,6 +346,8 @@ async def _scrape_all(sources: dict, titles: list[str], markets: list[str]) -> l
                         tasks.append(_scrape_cakeresume_one(title, market, browsers["cake"], cake_sem))
                 if "yourator" in browsers and not yourator_url:
                     tasks.append(_scrape_yourator_one(title, browsers["yourator"], yourator_sem))
+                if "104" in browsers:
+                    tasks.append(_scrape_104_one(title, browsers["104"], sem_104))
 
             batches = await asyncio.gather(*tasks, return_exceptions=True)
         finally:
