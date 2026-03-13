@@ -661,6 +661,10 @@
       for (const m of data.matches || []) {
         MATCH_DATA[m.job_id] = { score: m.score, similarity: m.similarity, explanation: m.explanation };
       }
+      if (RESUME_STATUS === 'done') {
+        const sel = document.getElementById('sort-select');
+        if (sel) sel.value = 'best-match';
+      }
       updateResumeUI();
       renderJobs();
       if (RESUME_STATUS !== 'processing') {
