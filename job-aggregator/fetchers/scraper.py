@@ -406,10 +406,25 @@ def _extract_api_jobs(data: object, out: list[dict]) -> None:
                 _extract_api_jobs(val, out)
 
 
+_YOURATOR_STEALTH_SCRIPT = """
+    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+    Object.defineProperty(navigator, 'languages', {get: () => ['zh-TW', 'zh', 'en-US', 'en']});
+    window.chrome = {runtime: {}};
+"""
+
+
 async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
     async with sem:
         results = []
-        context = await browser.new_context(user_agent=_UA)
+        context = await browser.new_context(
+            user_agent=_UA,
+            viewport={"width": 1280, "height": 800},
+            locale="zh-TW",
+            extra_http_headers={"Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7"},
+        )
+        # Hide Playwright automation signals so Yourator renders job cards
+        await context.add_init_script(_YOURATOR_STEALTH_SCRIPT)
         page = await context.new_page()
 
         # Intercept JSON API responses — capture job data before the DOM finishes rendering
@@ -436,6 +451,32 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
                 pass
             # Give the React SPA 10 s to fetch and render job listings
             await page.wait_for_timeout(10000)
+
+            # --- Attempt 0: parse __NEXT_DATA__ inline JSON (Next.js SSR) ---
+            next_data_jobs: list[dict] = await page.evaluate("""
+                () => {
+                    try {
+                        const el = document.getElementById('__NEXT_DATA__');
+                        if (!el) return [];
+                        const data = JSON.parse(el.textContent);
+                        // Walk common Next.js shapes for job arrays
+                        const search = (obj, depth) => {
+                            if (depth > 6 || !obj || typeof obj !== 'object') return [];
+                            if (Array.isArray(obj)) {
+                                if (obj.length > 0 && typeof obj[0] === 'object' && obj[0] !== null
+                                    && ('name' in obj[0] || 'title' in obj[0] || 'job_name' in obj[0])) {
+                                    return obj;
+                                }
+                                return obj.flatMap(v => search(v, depth + 1));
+                            }
+                            return Object.values(obj).flatMap(v => search(v, depth + 1));
+                        };
+                        return search(data, 0);
+                    } catch(e) { return []; }
+                }
+            """)
+            if next_data_jobs:
+                _extract_api_jobs(next_data_jobs, api_jobs)
 
             # --- Primary: use intercepted API data ---
             if api_jobs:
@@ -525,7 +566,7 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
 
             if not results:
                 print(f"[DEBUG] Yourator '{label}': {await page.title()!r} — 0 jobs extracted"
-                      f" (api_jobs={len(api_jobs)})")
+                      f" (api_jobs={len(api_jobs)}, next_data_jobs={len(next_data_jobs)})")
                 await _dump_html(page, f"yourator_{label}")
         except Exception as e:
             print(f"[WARN] Yourator '{label}': {e}")
@@ -549,7 +590,10 @@ async def _scrape_all(sources: dict, titles: list[str], markets: list[str]) -> l
             if sources.get("cakeresume"):
                 browsers["cake"] = await p.chromium.launch(headless=True)
             if sources.get("yourator"):
-                browsers["yourator"] = await p.chromium.launch(headless=True)
+                browsers["yourator"] = await p.chromium.launch(
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
             if sources.get("104"):
                 browsers["104"] = await p.chromium.launch(headless=True)
 
