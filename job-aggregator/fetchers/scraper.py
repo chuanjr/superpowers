@@ -486,8 +486,8 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
 
 async def _scrape_yourator_one(keyword: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
     kw = quote_plus(keyword)
-    # /jobs?term= shows individual job listings; /search?s= shows company cards
-    url = f"https://www.yourator.co/jobs?term={kw}"
+    # /jobs?sort=most_related&term[]= shows individual job listings (term[] is the correct array param)
+    url = f"https://www.yourator.co/jobs?sort=most_related&term[]={kw}"
     return await _scrape_yourator_page(url, keyword, browser, sem)
 
 
