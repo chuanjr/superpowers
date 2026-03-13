@@ -558,6 +558,7 @@
         <input type="file" id="resume-input" accept=".pdf" style="display:none">
         📄 Upload PDF
       </label>
+      <button id="resume-rematch" style="display:none;margin-top:8px;width:100%;padding:6px 0;border:1.5px solid #4f8ef7;border-radius:7px;background:#fff;color:#4f8ef7;font-size:0.82rem;font-weight:600;cursor:pointer;" title="Re-run match scores against all current jobs">⟳ Run Match Score</button>
       <div id="resume-status" class="resume-status"></div>
       <button id="resume-clear" class="resume-clear-btn" style="display:none">Clear resume</button>
     </div>
@@ -865,36 +866,44 @@
 
   // ── Resume upload + polling ───────────────────────────────
 
-  function _resumeStatusEl() { return document.getElementById('resume-status'); }
+  function _resumeStatusEl()  { return document.getElementById('resume-status'); }
   function _resumeClearBtn()  { return document.getElementById('resume-clear'); }
+  function _resumeRematchBtn(){ return document.getElementById('resume-rematch'); }
   function _sortBestMatch()   { return document.getElementById('sort-best-match'); }
 
   function updateResumeUI() {
-    const el = _resumeStatusEl();
-    const clearBtn = _resumeClearBtn();
-    const bestOpt  = _sortBestMatch();
+    const el        = _resumeStatusEl();
+    const clearBtn  = _resumeClearBtn();
+    const rematchBtn= _resumeRematchBtn();
+    const bestOpt   = _sortBestMatch();
     if (!el) return;
 
     el.className = 'resume-status';
     if (RESUME_STATUS === 'none') {
       el.textContent = '';
       clearBtn.style.display = 'none';
+      rematchBtn.style.display = 'none';
       if (bestOpt) bestOpt.disabled = true;
     } else if (RESUME_STATUS === 'processing') {
       el.textContent = 'Analyzing résumé…';
       el.classList.add('processing');
       clearBtn.style.display = 'block';
+      rematchBtn.style.display = 'none';
       if (bestOpt) bestOpt.disabled = true;
     } else if (RESUME_STATUS === 'done') {
       const n = Object.values(MATCH_DATA).filter(m => m.score != null).length;
       el.textContent = `Matched ${n} jobs`;
       el.classList.add('done');
       clearBtn.style.display = 'block';
+      rematchBtn.style.display = 'block';
+      rematchBtn.disabled = false;
+      rematchBtn.textContent = '⟳ Run Match Score';
       if (bestOpt) bestOpt.disabled = false;
     } else {
       el.textContent = 'Error — try re-uploading';
       el.classList.add('error');
       clearBtn.style.display = 'block';
+      rematchBtn.style.display = 'none';
       if (bestOpt) bestOpt.disabled = true;
     }
   }
@@ -967,6 +976,28 @@
     e.target.value = ''; // allow re-uploading same file
   });
   document.getElementById('resume-clear').addEventListener('click', clearResume);
+
+  document.getElementById('resume-rematch').addEventListener('click', async () => {
+    const btn = _resumeRematchBtn();
+    btn.disabled = true;
+    btn.textContent = '⟳ Running…';
+    try {
+      const res  = await fetch('/api/resume/rematch', { method: 'POST' });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Failed');
+      RESUME_ID     = data.resume_id;
+      RESUME_STATUS = 'processing';
+      updateResumeUI();
+      if (_pollTimer) clearInterval(_pollTimer);
+      _pollTimer = setInterval(fetchMatches, 4000);
+      fetchMatches();
+    } catch(e) {
+      btn.disabled = false;
+      btn.textContent = '⟳ Run Match Score';
+      _resumeStatusEl().textContent = 'Error: ' + e.message;
+      _resumeStatusEl().className = 'resume-status error';
+    }
+  });
 
   document.getElementById('job-list').addEventListener('click', e => {
     const pBtn = e.target.closest('.btn-pipeline');

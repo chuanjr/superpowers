@@ -77,6 +77,19 @@ async def upload_resume(background_tasks: BackgroundTasks, file: UploadFile = Fi
     return {"resume_id": resume_id, "status": "processing"}
 
 
+@app.post("/api/resume/rematch")
+async def rematch_resume(background_tasks: BackgroundTasks) -> JSONResponse:
+    """Re-run match scoring for the latest uploaded resume."""
+    resume = get_latest_resume()
+    if not resume:
+        raise HTTPException(status_code=404, detail="No resume found — upload one first")
+    from resume_matcher import process_matching
+    rid      = resume["id"]
+    raw_text = resume.get("raw_text", "")
+    background_tasks.add_task(process_matching, rid, raw_text)
+    return {"resume_id": rid, "status": "processing"}
+
+
 @app.get("/api/resume/matches")
 def resume_matches(resume_id: int | None = None) -> JSONResponse:
     """Return match results for a résumé (defaults to the latest uploaded)."""
