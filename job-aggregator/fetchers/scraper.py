@@ -464,13 +464,19 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
 
         try:
             await page.goto(url, timeout=45000, wait_until="domcontentloaded")
-            # Click body to dismiss the search-bar autocomplete dropdown that appears on load
+            # Press Escape to dismiss the search-bar autocomplete that appears on load
             try:
-                await page.click("body", timeout=2000)
+                await page.keyboard.press("Escape")
             except Exception:
                 pass
             # Give the React SPA 10 s to fetch and render job listings
             await page.wait_for_timeout(10000)
+            # Scroll down to trigger any lazy-loaded job cards
+            try:
+                await page.evaluate("window.scrollBy(0, 600)")
+                await page.wait_for_timeout(1500)
+            except Exception:
+                pass
 
             # --- Attempt 0: parse __NEXT_DATA__ inline JSON (Next.js SSR) ---
             next_data_jobs: list[dict] = await page.evaluate("""
@@ -606,8 +612,8 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
 
 async def _scrape_yourator_one(keyword: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
     kw = quote(keyword)  # %20 encoding (not quote_plus which gives +)
-    # /jobs?sort=most_related&term[]= shows individual job listings
-    url = f"https://www.yourator.co/jobs?sort=most_related&term[]={kw}"
+    # Use bare term[]= without sort= — Yourator's own canonical URLs omit sort=
+    url = f"https://www.yourator.co/jobs?term[]={kw}"
     return await _scrape_yourator_page(url, keyword, browser, sem)
 
 
