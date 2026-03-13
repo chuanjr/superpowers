@@ -150,11 +150,16 @@ async def _dump_html(page, name: str) -> None:
         r'https?://[^\s"\'<>]{8,80}(?:api|graphql|search|jobs)[^\s"\'<>]*', html
     )))[:5]
     fetch_hints = list(dict.fromkeys(re.findall(r'fetch\(["\']([^"\']{10,80})["\']', html)))[:5]
+    # Yourator job links: /companies/{slug}/jobs/{slug}
+    job_links = list(dict.fromkeys(re.findall(
+        r"""href=["'](/companies/[^"' >/]+/jobs/[^"' >]+)["']""", html
+    )))[:10]
     print(
         f"[DEBUG] Saved HTML to {path} ({len(html):,} bytes)."
         f"\n  __NEXT_DATA__: {has_next_data} ({next_data_size:,} bytes)"
         f"\n  API URL hints: {api_hints}"
         f"\n  fetch() hints: {fetch_hints}"
+        f"\n  Yourator job links found: {job_links}"
         f"\n  Job-related classes: {sorted(classes)[:30]}"
     )
 
