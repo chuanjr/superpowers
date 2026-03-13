@@ -231,6 +231,55 @@
     font-size: 0.72rem;
   }
 
+  /* ── Match badge ─────────────────────────────────────────── */
+  .badge-match {
+    font-size: 0.68rem;
+    font-weight: 700;
+    padding: 2px 7px;
+    border-radius: 20px;
+    cursor: default;
+    white-space: nowrap;
+  }
+  .badge-match-high  { background: #dcfce7; color: #15803d; }
+  .badge-match-mid   { background: #fef9c3; color: #a16207; }
+  .badge-match-low   { background: #f3f4f6; color: #6b7280; }
+
+  /* ── Resume upload card ──────────────────────────────────── */
+  .resume-upload-btn {
+    display: block;
+    text-align: center;
+    padding: 7px 10px;
+    border: 1.5px dashed #d1d5db;
+    border-radius: 7px;
+    font-size: 0.82rem;
+    color: #4f8ef7;
+    cursor: pointer;
+    transition: border-color .15s, background .15s;
+  }
+  .resume-upload-btn:hover { border-color: #4f8ef7; background: #f0f6ff; }
+
+  .resume-status {
+    font-size: 0.78rem;
+    color: #6b7280;
+    margin-top: 6px;
+    min-height: 1em;
+  }
+  .resume-status.processing { color: #d97706; }
+  .resume-status.done       { color: #16a34a; }
+  .resume-status.error      { color: #dc2626; }
+
+  .resume-clear-btn {
+    margin-top: 6px;
+    font-size: 0.75rem;
+    color: #9ca3af;
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 0;
+    text-decoration: underline;
+  }
+  .resume-clear-btn:hover { color: #6b7280; }
+
   /* ── Empty state ─────────────────────────────────────────── */
   .empty {
     text-align: center;
@@ -296,7 +345,19 @@
         <option value="oldest">Oldest first</option>
         <option value="title">Title A→Z</option>
         <option value="company">Company A→Z</option>
+        <option value="best-match" id="sort-best-match" disabled>Best match</option>
       </select>
+    </div>
+
+    <!-- Resume match -->
+    <div class="filter-card">
+      <h3>Resume Match</h3>
+      <label class="resume-upload-btn">
+        <input type="file" id="resume-input" accept=".pdf" style="display:none">
+        📄 Upload PDF
+      </label>
+      <div id="resume-status" class="resume-status"></div>
+      <button id="resume-clear" class="resume-clear-btn" style="display:none">Clear resume</button>
     </div>
   </aside>
 
@@ -310,6 +371,12 @@
 <script>
   let ALL_JOBS = [];
   const NOW = Date.now();
+
+  // ── Resume match state ────────────────────────────────────
+  let MATCH_DATA = {};        // { job_id: { score, similarity, explanation } }
+  let RESUME_ID  = null;
+  let RESUME_STATUS = 'none'; // none | processing | done | error:…
+  let _pollTimer = null;
 
   // ── Fetch data ────────────────────────────────────────────
   async function loadJobs() {
@@ -416,6 +483,12 @@
       filtered.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
     } else if (sort === 'company') {
       filtered.sort((a, b) => (a.company || '').localeCompare(b.company || ''));
+    } else if (sort === 'best-match') {
+      filtered.sort((a, b) => {
+        const sa = MATCH_DATA[a.id]?.score ?? Math.round((MATCH_DATA[a.id]?.similarity ?? 0) * 100);
+        const sb = MATCH_DATA[b.id]?.score ?? Math.round((MATCH_DATA[b.id]?.similarity ?? 0) * 100);
+        return sb - sa;
+      });
     }
 
     return filtered;
@@ -449,6 +522,15 @@
   function renderCard(job) {
     const newBadge = isNew(job) ? '<span class="badge-new">New</span>' : '';
 
+    const m = MATCH_DATA[job.id];
+    let matchBadge = '';
+    if (m) {
+      const pct = m.score ?? Math.round((m.similarity ?? 0) * 100);
+      const cls = pct >= 70 ? 'badge-match-high' : pct >= 40 ? 'badge-match-mid' : 'badge-match-low';
+      const tip = m.explanation ? ` title="${escHtml(m.explanation)}"` : '';
+      matchBadge = `<span class="badge-match ${cls}"${tip}>${pct}% match</span>`;
+    }
+
     const logoHtml = job.logo_url
       ? `<img class="logo" src="${escHtml(job.logo_url)}" alt="" loading="lazy">`
       : `<div class="logo-placeholder">🏢</div>`;
@@ -477,6 +559,7 @@
         ${escHtml(job.title || '—')}
       </a>
       ${newBadge}
+      ${matchBadge}
     </div>
     <div class="job-meta">${company}${location}</div>
     <div class="job-tags">
@@ -532,12 +615,105 @@
       .replace(/"/g, '&quot;');
   }
 
+  // ── Resume upload + polling ───────────────────────────────
+
+  function _resumeStatusEl() { return document.getElementById('resume-status'); }
+  function _resumeClearBtn()  { return document.getElementById('resume-clear'); }
+  function _sortBestMatch()   { return document.getElementById('sort-best-match'); }
+
+  function updateResumeUI() {
+    const el = _resumeStatusEl();
+    const clearBtn = _resumeClearBtn();
+    const bestOpt  = _sortBestMatch();
+    if (!el) return;
+
+    el.className = 'resume-status';
+    if (RESUME_STATUS === 'none') {
+      el.textContent = '';
+      clearBtn.style.display = 'none';
+      if (bestOpt) bestOpt.disabled = true;
+    } else if (RESUME_STATUS === 'processing') {
+      el.textContent = 'Analyzing résumé…';
+      el.classList.add('processing');
+      clearBtn.style.display = 'block';
+      if (bestOpt) bestOpt.disabled = true;
+    } else if (RESUME_STATUS === 'done') {
+      const n = Object.values(MATCH_DATA).filter(m => m.score != null).length;
+      el.textContent = `Matched ${n} jobs`;
+      el.classList.add('done');
+      clearBtn.style.display = 'block';
+      if (bestOpt) bestOpt.disabled = false;
+    } else {
+      el.textContent = 'Error — try re-uploading';
+      el.classList.add('error');
+      clearBtn.style.display = 'block';
+      if (bestOpt) bestOpt.disabled = true;
+    }
+  }
+
+  async function fetchMatches() {
+    if (!RESUME_ID) return;
+    try {
+      const res  = await fetch(`/api/resume/matches?resume_id=${RESUME_ID}`);
+      const data = await res.json();
+      RESUME_STATUS = data.status || 'none';
+      MATCH_DATA = {};
+      for (const m of data.matches || []) {
+        MATCH_DATA[m.job_id] = { score: m.score, similarity: m.similarity, explanation: m.explanation };
+      }
+      updateResumeUI();
+      renderJobs();
+      if (RESUME_STATUS !== 'processing') {
+        clearInterval(_pollTimer);
+        _pollTimer = null;
+      }
+    } catch (e) { /* network hiccup — keep polling */ }
+  }
+
+  async function uploadResume(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    RESUME_STATUS = 'processing';
+    updateResumeUI();
+    try {
+      const res  = await fetch('/api/resume/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Upload failed');
+      RESUME_ID = data.resume_id;
+      // Start polling every 4 s
+      if (_pollTimer) clearInterval(_pollTimer);
+      _pollTimer = setInterval(fetchMatches, 4000);
+      fetchMatches();
+    } catch (e) {
+      RESUME_STATUS = 'error';
+      updateResumeUI();
+    }
+  }
+
+  function clearResume() {
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+    RESUME_ID = null;
+    RESUME_STATUS = 'none';
+    MATCH_DATA = {};
+    // If currently sorted by best-match, switch back to newest
+    const sel = document.getElementById('sort-select');
+    if (sel && sel.value === 'best-match') sel.value = 'newest';
+    updateResumeUI();
+    renderJobs();
+  }
+
   // ── Wire up events ────────────────────────────────────────
   document.getElementById('search').addEventListener('input', renderJobs);
   document.getElementById('sort-select').addEventListener('change', renderJobs);
   document.querySelectorAll('input[name=days]').forEach(r =>
     r.addEventListener('change', renderJobs)
   );
+  document.getElementById('resume-input').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) uploadResume(file);
+    e.target.value = ''; // allow re-uploading same file
+  });
+  document.getElementById('resume-clear').addEventListener('click', clearResume);
 
   // ── Boot ──────────────────────────────────────────────────
   loadJobs();

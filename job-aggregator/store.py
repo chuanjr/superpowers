@@ -7,6 +7,7 @@ import json
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 from models import Job
 
@@ -38,6 +39,34 @@ def init_db(path: Path = DB_PATH) -> None:
             logo_url     TEXT,
             first_seen_at TEXT NOT NULL,
             last_seen_at  TEXT NOT NULL
+        )
+    """)
+    # Migration: add embedding column for resume matching
+    try:
+        conn.execute("ALTER TABLE jobs ADD COLUMN embedding TEXT")
+    except sqlite3.OperationalError:
+        pass  # Column already exists
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS resumes (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            filename    TEXT,
+            raw_text    TEXT,
+            parsed_json TEXT,
+            embedding   TEXT,
+            status      TEXT NOT NULL DEFAULT 'pending',
+            created_at  TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS resume_job_matches (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            resume_id   INTEGER NOT NULL REFERENCES resumes(id),
+            job_id      TEXT NOT NULL REFERENCES jobs(id),
+            similarity  REAL,
+            score       INTEGER,
+            explanation TEXT,
+            created_at  TEXT NOT NULL,
+            UNIQUE(resume_id, job_id)
         )
     """)
     conn.commit()
@@ -80,10 +109,13 @@ def upsert_jobs(jobs: list[Job]) -> list[Job]:
 
 
 def get_all_jobs() -> list[dict]:
-    """Return all jobs ordered newest-first (by first_seen_at)."""
+    """Return all jobs ordered newest-first (by first_seen_at). Excludes embedding column."""
     with _conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM jobs ORDER BY first_seen_at DESC"
+            """SELECT id, title, company, location, market, url, description,
+                      sources, industry, stage, posted_at, fetched_at, logo_url,
+                      first_seen_at, last_seen_at
+               FROM jobs ORDER BY first_seen_at DESC"""
         ).fetchall()
     result = []
     for row in rows:
@@ -98,3 +130,111 @@ def get_existing_ids() -> set[str]:
     with _conn() as conn:
         rows = conn.execute("SELECT id FROM jobs").fetchall()
     return {r["id"] for r in rows}
+
+
+# ── Resume store ───────────────────────────────────────────────────────────────
+
+def save_resume(filename: str, raw_text: str) -> int:
+    """Insert a new resume record and return its ID."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        cur = conn.execute(
+            "INSERT INTO resumes (filename, raw_text, status, created_at) VALUES (?, ?, 'pending', ?)",
+            (filename, raw_text, now),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def update_resume(resume_id: int, *,
+                  parsed_json: Optional[str] = None,
+                  embedding: Optional[str] = None,
+                  status: Optional[str] = None) -> None:
+    """Partially update a resume row."""
+    updates, values = [], []
+    if parsed_json is not None:
+        updates.append("parsed_json = ?"); values.append(parsed_json)
+    if embedding is not None:
+        updates.append("embedding = ?"); values.append(embedding)
+    if status is not None:
+        updates.append("status = ?"); values.append(status)
+    if not updates:
+        return
+    values.append(resume_id)
+    with _conn() as conn:
+        conn.execute(f"UPDATE resumes SET {', '.join(updates)} WHERE id = ?", values)
+        conn.commit()
+
+
+def get_resume(resume_id: int) -> Optional[dict]:
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM resumes WHERE id = ?", (resume_id,)).fetchone()
+    return dict(row) if row else None
+
+
+def get_latest_resume() -> Optional[dict]:
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM resumes ORDER BY id DESC LIMIT 1").fetchone()
+    return dict(row) if row else None
+
+
+# ── Job embedding helpers ──────────────────────────────────────────────────────
+
+def get_jobs_needing_embedding() -> list[dict]:
+    """Return jobs that don't yet have an embedding stored."""
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT id, title, company, description FROM jobs WHERE embedding IS NULL"
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_all_jobs_with_embeddings() -> list[dict]:
+    """Return id + embedding for all jobs (internal use only)."""
+    with _conn() as conn:
+        rows = conn.execute("SELECT id, embedding FROM jobs WHERE embedding IS NOT NULL").fetchall()
+    return [dict(r) for r in rows]
+
+
+def update_job_embedding(job_id: str, embedding_json: str) -> None:
+    with _conn() as conn:
+        conn.execute("UPDATE jobs SET embedding = ? WHERE id = ?", (embedding_json, job_id))
+        conn.commit()
+
+
+# ── Resume-job match helpers ───────────────────────────────────────────────────
+
+def upsert_match(resume_id: int, job_id: str, similarity: float,
+                 score: Optional[int] = None, explanation: Optional[str] = None) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        conn.execute("""
+            INSERT INTO resume_job_matches (resume_id, job_id, similarity, score, explanation, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(resume_id, job_id) DO UPDATE SET
+                similarity  = excluded.similarity,
+                score       = COALESCE(excluded.score, score),
+                explanation = COALESCE(excluded.explanation, explanation)
+        """, (resume_id, job_id, similarity, score, explanation, now))
+        conn.commit()
+
+
+def get_matches(resume_id: int) -> list[dict]:
+    """Return all match rows for a resume, joined with job metadata, best first."""
+    with _conn() as conn:
+        rows = conn.execute("""
+            SELECT
+                rjm.job_id, rjm.similarity, rjm.score, rjm.explanation,
+                j.title, j.company, j.location, j.market, j.url,
+                j.logo_url, j.sources, j.first_seen_at
+            FROM resume_job_matches rjm
+            JOIN jobs j ON j.id = rjm.job_id
+            WHERE rjm.resume_id = ?
+            ORDER BY COALESCE(rjm.score, CAST(rjm.similarity * 100 AS INTEGER)) DESC
+        """, (resume_id,)).fetchall()
+    result = []
+    for row in rows:
+        d = dict(row)
+        d["sources"] = json.loads(d.get("sources") or "[]")
+        result.append(d)
+    return result

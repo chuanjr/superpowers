@@ -8,12 +8,12 @@ Usage:
 import sys
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-from store import init_db, get_all_jobs
+from store import init_db, get_all_jobs, save_resume, get_resume, get_latest_resume, get_matches
 
 app = FastAPI(title="Job Board")
 
@@ -42,7 +42,51 @@ def api_stats() -> dict:
     }
 
 
-# Serve static files (CSS/JS assets if added later)
+# ── Resume match endpoints ─────────────────────────────────────────────────────
+
+@app.post("/api/resume/upload")
+async def upload_resume(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
+    """Accept a PDF résumé, kick off background matching, return resume_id immediately."""
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Only PDF files are supported")
+
+    from resume_matcher import extract_pdf_text, process_matching
+
+    pdf_bytes = await file.read()
+    try:
+        raw_text = extract_pdf_text(pdf_bytes)
+    except Exception as exc:
+        raise HTTPException(status_code=422, detail=f"Could not extract text from PDF: {exc}")
+
+    resume_id = save_resume(filename=file.filename, raw_text=raw_text)
+    background_tasks.add_task(process_matching, resume_id, raw_text)
+
+    return {"resume_id": resume_id, "status": "processing"}
+
+
+@app.get("/api/resume/matches")
+def resume_matches(resume_id: int | None = None) -> JSONResponse:
+    """Return match results for a résumé (defaults to the latest uploaded)."""
+    if resume_id is not None:
+        resume = get_resume(resume_id)
+    else:
+        resume = get_latest_resume()
+
+    if not resume:
+        return JSONResponse({"status": "none", "matches": []})
+
+    rid = resume["id"]
+    matches = get_matches(rid)
+    return JSONResponse({
+        "resume_id": rid,
+        "filename": resume.get("filename"),
+        "status": resume.get("status", "pending"),
+        "matches": matches,
+    })
+
+
+# ── Static / SPA ───────────────────────────────────────────────────────────────
+
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 
