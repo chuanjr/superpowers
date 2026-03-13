@@ -390,92 +390,142 @@ async def _scrape_104_one(keyword: str, browser: Browser, sem: asyncio.Semaphore
         return results
 
 
+def _extract_api_jobs(data: object, out: list[dict]) -> None:
+    """Recursively hunt for job-like objects in a Yourator API response."""
+    if isinstance(data, list):
+        for item in data:
+            if isinstance(item, dict):
+                title = (item.get("name") or item.get("title") or
+                         item.get("job_name") or item.get("position") or "")
+                if title and len(title) >= 3:
+                    out.append(item)
+    elif isinstance(data, dict):
+        for key in ("jobs", "data", "results", "hits", "items", "records"):
+            val = data.get(key)
+            if val is not None:
+                _extract_api_jobs(val, out)
+
+
 async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
     async with sem:
         results = []
         context = await browser.new_context(user_agent=_UA)
         page = await context.new_page()
+
+        # Intercept JSON API responses — capture job data before the DOM finishes rendering
+        api_jobs: list[dict] = []
+
+        async def _on_response(response) -> None:
+            try:
+                if "yourator.co" not in response.url:
+                    return
+                if "json" not in response.headers.get("content-type", ""):
+                    return
+                _extract_api_jobs(await response.json(), api_jobs)
+            except Exception:
+                pass
+
+        page.on("response", _on_response)
+
         try:
             await page.goto(url, timeout=45000, wait_until="domcontentloaded")
-            # Yourator is a React SPA; wait for job cards to render
-            await page.wait_for_timeout(5000)
+            # Click body to dismiss the search-bar autocomplete dropdown that appears on load
+            try:
+                await page.click("body", timeout=2000)
+            except Exception:
+                pass
+            # Give the React SPA 10 s to fetch and render job listings
+            await page.wait_for_timeout(10000)
 
-            # Use JS to extract all anchor data (works even if href="" or href="#")
-            raw_links: list[dict] = await page.evaluate("""
-                () => {
-                    const scope = document.querySelector(
-                        '.search-result__cards, .search-records-section, [class*="search-result"], main'
-                    ) || document.body;
-                    return Array.from(scope.querySelectorAll('a')).map(a => {
-                        // Walk up to find a card container that might hold company info
-                        let card = a.closest('li, article, [class*="card"], [class*="item"], [class*="result"]');
-                        let company = '';
-                        if (card) {
-                            let companyEl = card.querySelector(
-                                '[class*="company"], [class*="Company"], [class*="brand"], [class*="Brand"]'
-                            );
-                            if (!companyEl) {
-                                // Try second <a> in the card as company link
-                                let cardLinks = Array.from(card.querySelectorAll('a'));
-                                if (cardLinks.length > 1 && cardLinks[1] !== a) {
-                                    company = cardLinks[1].innerText.trim().split('\\n')[0];
+            # --- Primary: use intercepted API data ---
+            if api_jobs:
+                seen: set[str] = set()
+                for job in api_jobs[:20]:
+                    title = (job.get("name") or job.get("title") or
+                             job.get("job_name") or job.get("position") or "").strip()
+                    if not title or len(title) < 3 or title.lower() in _UI_SKIP_LOWER:
+                        continue
+                    company_raw = job.get("company") or job.get("brand") or {}
+                    if isinstance(company_raw, dict):
+                        company = (company_raw.get("name") or company_raw.get("display_name") or "").strip()
+                    else:
+                        company = str(company_raw).strip()
+                    company_slug = (company_raw.get("slug") if isinstance(company_raw, dict) else "") or ""
+                    job_slug = job.get("slug") or job.get("id") or ""
+                    if job_slug and company_slug:
+                        job_url = f"https://www.yourator.co/companies/{company_slug}/jobs/{job_slug}"
+                    elif job_slug:
+                        job_url = f"https://www.yourator.co/jobs/{job_slug}"
+                    else:
+                        job_url = url
+                    if job_url in seen:
+                        continue
+                    seen.add(job_url)
+                    results.append(normalize_yourator_item(
+                        {"job_title": title, "company_name": company, "job_url": job_url},
+                        market="tw",
+                    ))
+
+            # --- Fallback: DOM link extraction ---
+            if not results:
+                raw_links: list[dict] = await page.evaluate("""
+                    () => {
+                        const scope = document.querySelector(
+                            '.search-result__cards, [class*="search-result"], main'
+                        ) || document.body;
+                        return Array.from(scope.querySelectorAll('a')).map(a => {
+                            let card = a.closest('li, article, [class*="card"], [class*="item"], [class*="result"]');
+                            let company = '';
+                            if (card) {
+                                let companyEl = card.querySelector(
+                                    '[class*="company"], [class*="Company"], [class*="brand"], [class*="Brand"]'
+                                );
+                                if (!companyEl) {
+                                    let cardLinks = Array.from(card.querySelectorAll('a'));
+                                    if (cardLinks.length > 1 && cardLinks[1] !== a) {
+                                        company = cardLinks[1].innerText.trim().split('\\n')[0];
+                                    }
+                                } else {
+                                    company = companyEl.innerText.trim().split('\\n')[0];
                                 }
-                            } else {
-                                company = companyEl.innerText.trim().split('\\n')[0];
                             }
-                        }
-                        return {
-                            href: a.getAttribute('href') || '',
-                            text: a.innerText.trim(),
-                            company: company
-                        };
-                    });
-                }
-            """)
-
-            seen: set[str] = set()
-            for item in raw_links:
-                href = item.get("href", "")
-                text = item.get("text", "").strip()
-                company = item.get("company", "").strip()
-
-                if not href or href in seen or href.startswith("#") or href.startswith("javascript"):
-                    continue
-                # Yourator job detail pages: /companies/{slug}/jobs/{id} (depth=4)
-                # Company pages: /companies/{slug} (depth=2) — skip those
-                path = href.split("?")[0].rstrip("/")
-                segments = [s for s in path.split("/") if s]
-                if "jobs" not in segments:
-                    continue
-                if len(segments) < 3:
-                    continue
-                seen.add(href)
-
-                # Strip multi-line text (company cards have location/industry on extra lines)
-                if "\n" in text:
-                    text = text.split("\n")[0].strip()
-                if not text or len(text) < 3 or len(text) > 100:
-                    continue
-                if text.lower() in _UI_SKIP_LOWER or _is_location_text(text):
-                    continue
-
-                full_url = href if href.startswith("http") else f"https://www.yourator.co{href}"
-
-                # Extract company slug from URL if format is /companies/{slug}/jobs/{id}
-                if not company and "companies" in segments:
-                    idx = segments.index("companies")
-                    if idx + 1 < len(segments):
-                        company = segments[idx + 1].replace("-", " ").title()
-
-                results.append(normalize_yourator_item(
-                    {"job_title": text, "company_name": company, "job_url": full_url},
-                    market="tw"
-                ))
-                if len(results) >= 20:
-                    break
+                            return { href: a.getAttribute('href') || '', text: a.innerText.trim(), company };
+                        });
+                    }
+                """)
+                seen: set[str] = set()
+                for item in raw_links:
+                    href = item.get("href", "")
+                    text = item.get("text", "").strip()
+                    company = item.get("company", "").strip()
+                    if not href or href in seen or href.startswith("#") or href.startswith("javascript"):
+                        continue
+                    path = href.split("?")[0].rstrip("/")
+                    segments = [s for s in path.split("/") if s]
+                    if "jobs" not in segments or len(segments) < 3:
+                        continue
+                    seen.add(href)
+                    if "\n" in text:
+                        text = text.split("\n")[0].strip()
+                    if not text or len(text) < 3 or len(text) > 100:
+                        continue
+                    if text.lower() in _UI_SKIP_LOWER or _is_location_text(text):
+                        continue
+                    full_url = href if href.startswith("http") else f"https://www.yourator.co{href}"
+                    if not company and "companies" in segments:
+                        idx = segments.index("companies")
+                        if idx + 1 < len(segments):
+                            company = segments[idx + 1].replace("-", " ").title()
+                    results.append(normalize_yourator_item(
+                        {"job_title": text, "company_name": company, "job_url": full_url},
+                        market="tw",
+                    ))
+                    if len(results) >= 20:
+                        break
 
             if not results:
-                print(f"[DEBUG] Yourator '{label}': {await page.title()!r} — 0 jobs extracted")
+                print(f"[DEBUG] Yourator '{label}': {await page.title()!r} — 0 jobs extracted"
+                      f" (api_jobs={len(api_jobs)})")
                 await _dump_html(page, f"yourator_{label}")
         except Exception as e:
             print(f"[WARN] Yourator '{label}': {e}")
@@ -485,8 +535,8 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
 
 
 async def _scrape_yourator_one(keyword: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
-    kw = quote_plus(keyword)
-    # /jobs?sort=most_related&term[]= shows individual job listings (term[] is the correct array param)
+    kw = quote(keyword)  # %20 encoding (not quote_plus which gives +)
+    # /jobs?sort=most_related&term[]= shows individual job listings
     url = f"https://www.yourator.co/jobs?sort=most_related&term[]={kw}"
     return await _scrape_yourator_page(url, keyword, browser, sem)
 
