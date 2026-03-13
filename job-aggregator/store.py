@@ -91,6 +91,16 @@ def init_db(path: Path = DB_PATH) -> None:
         conn.execute("ALTER TABLE resumes ADD COLUMN headline TEXT")
     except sqlite3.OperationalError:
         pass
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS feedback (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id      TEXT NOT NULL REFERENCES jobs(id),
+            resume_id   INTEGER REFERENCES resumes(id),
+            rating      TEXT NOT NULL,
+            reason      TEXT,
+            created_at  TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -349,3 +359,48 @@ def get_pipeline_job_ids() -> set[str]:
     with _conn() as conn:
         rows = conn.execute("SELECT job_id FROM pipeline").fetchall()
     return {r["job_id"] for r in rows}
+
+
+# ── Single job lookup ──────────────────────────────────────────────────────────
+
+def get_job(job_id: str) -> Optional[dict]:
+    with _conn() as conn:
+        row = conn.execute(
+            """SELECT id, title, company, location, market, url, description,
+                      sources, industry, stage, logo_url
+               FROM jobs WHERE id = ?""",
+            (job_id,)
+        ).fetchone()
+    if not row:
+        return None
+    d = dict(row)
+    d["sources"] = json.loads(d.get("sources") or "[]")
+    return d
+
+
+# ── Feedback ───────────────────────────────────────────────────────────────────
+
+def save_feedback(job_id: str, resume_id: Optional[int],
+                  rating: str, reason: Optional[str] = None) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        conn.execute(
+            "INSERT INTO feedback (job_id, resume_id, rating, reason, created_at) VALUES (?, ?, ?, ?, ?)",
+            (job_id, resume_id, rating, reason, now),
+        )
+        conn.commit()
+
+
+def get_feedback_for_job(job_id: str, resume_id: Optional[int] = None) -> list[dict]:
+    with _conn() as conn:
+        if resume_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM feedback WHERE job_id = ? AND resume_id = ? ORDER BY created_at DESC",
+                (job_id, resume_id),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM feedback WHERE job_id = ? ORDER BY created_at DESC",
+                (job_id,),
+            ).fetchall()
+    return [dict(r) for r in rows]

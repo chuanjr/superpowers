@@ -334,6 +334,110 @@
   .btn-pipeline:hover { border-color: #4f8ef7; color: #4f8ef7; background: #f0f6ff; }
   .btn-pipeline.in-pipeline { border-color: #4f8ef7; color: #4f8ef7; background: #f0f6ff; }
 
+  /* ── Refresh button ── */
+  #btn-refresh {
+    padding: 6px 14px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 7px;
+    background: #fff;
+    font-size: 0.82rem;
+    font-weight: 500;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: border-color .12s, background .12s;
+    color: #374151;
+  }
+  #btn-refresh:hover:not(:disabled) { border-color: #9ca3af; background: #f9fafb; }
+  #btn-refresh:disabled { color: #9ca3af; cursor: default; }
+
+  /* ── Import button ── */
+  #btn-import {
+    padding: 6px 14px;
+    border: 1.5px solid #4f8ef7;
+    border-radius: 7px;
+    background: #fff;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    color: #4f8ef7;
+    transition: background .12s;
+  }
+  #btn-import:hover { background: #f0f6ff; }
+
+  /* ── Feedback buttons on cards ── */
+  .feedback-btns { display: flex; gap: 3px; }
+  .btn-fb {
+    background: none;
+    border: 1px solid #e5e7eb;
+    border-radius: 5px;
+    font-size: 0.75rem;
+    padding: 1px 6px;
+    cursor: pointer;
+    color: #d1d5db;
+    transition: background .12s, border-color .12s, color .12s;
+  }
+  .btn-fb:hover { border-color: #9ca3af; color: #374151; background: #f9fafb; }
+  .btn-fb.up   { border-color: #86efac; color: #16a34a; background: #f0fdf4; }
+  .btn-fb.down { border-color: #fca5a5; color: #dc2626; background: #fff1f2; }
+
+  /* ── Import & Feedback modals ── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.35);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: #fff;
+    border-radius: 12px;
+    padding: 24px 28px;
+    width: 420px;
+    max-width: 96vw;
+    box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  }
+  .modal h3 { font-size: 1rem; font-weight: 700; margin-bottom: 16px; }
+  .modal-field { margin-bottom: 14px; }
+  .modal-field label { display: block; font-size: 0.78rem; font-weight: 600; color: #6b7280; margin-bottom: 5px; text-transform: uppercase; letter-spacing: .04em; }
+  .modal-field input, .modal-field textarea, .modal-field select {
+    width: 100%;
+    padding: 8px 10px;
+    border: 1.5px solid #d1d5db;
+    border-radius: 7px;
+    font-size: 0.88rem;
+    font-family: inherit;
+    outline: none;
+    transition: border-color .12s;
+  }
+  .modal-field input:focus, .modal-field textarea:focus, .modal-field select:focus { border-color: #4f8ef7; }
+  .modal-field textarea { resize: vertical; min-height: 80px; }
+  .modal-btns { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+  .btn-modal-cancel {
+    padding: 7px 18px; border: 1.5px solid #e5e7eb; border-radius: 7px;
+    background: #fff; font-size: 0.85rem; cursor: pointer;
+  }
+  .btn-modal-cancel:hover { background: #f9fafb; }
+  .btn-modal-primary {
+    padding: 7px 18px; border: none; border-radius: 7px;
+    background: #1a1a2e; color: #fff; font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  }
+  .btn-modal-primary:hover { background: #2d2d4e; }
+  .btn-modal-primary:disabled { background: #9ca3af; cursor: default; }
+  .modal-status { font-size: 0.82rem; color: #6b7280; margin-top: 8px; min-height: 1.2em; }
+  .modal-status.ok  { color: #16a34a; }
+  .modal-status.err { color: #dc2626; }
+
+  .modal-reasons { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+  .modal-reason {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border: 1.5px solid #e5e7eb; border-radius: 7px;
+    cursor: pointer; font-size: 0.85rem; transition: border-color .12s, background .12s;
+  }
+  .modal-reason:hover { border-color: #9ca3af; background: #f9fafb; }
+  .modal-reason.selected { border-color: #4f8ef7; background: #f0f6ff; }
+  .modal-reason input[type=radio] { accent-color: #4f8ef7; }
+
   @media (max-width: 640px) {
     aside { display: none; }
     .layout { padding: 12px 10px; }
@@ -348,8 +452,68 @@
   <h1>Job <span>Board</span></h1>
   <input id="search" type="search" placeholder="Search title, company…" autocomplete="off">
   <div id="stats-bar">loading…</div>
+  <button id="btn-import" title="Add a job by URL">+ Import URL</button>
+  <button id="btn-refresh" title="Re-fetch all job sources">⟳ Refresh</button>
   <a href="/pipeline" id="pipeline-nav">Pipeline <span id="pipeline-count"></span></a>
 </header>
+
+<!-- ── Import URL Modal ── -->
+<div class="modal-overlay hidden" id="import-modal">
+  <div class="modal">
+    <h3>Import Job from URL</h3>
+    <div class="modal-field">
+      <label>Job Posting URL</label>
+      <input type="url" id="import-url" placeholder="https://www.104.com.tw/job/..." autocomplete="off">
+    </div>
+    <div id="import-preview" style="display:none">
+      <div class="modal-field">
+        <label>Job Title</label>
+        <input type="text" id="import-title">
+      </div>
+      <div class="modal-field">
+        <label>Company</label>
+        <input type="text" id="import-company">
+      </div>
+      <div style="display:flex;gap:12px">
+        <div class="modal-field" style="flex:1">
+          <label>Location</label>
+          <input type="text" id="import-location">
+        </div>
+        <div class="modal-field" style="flex:0 0 100px">
+          <label>Market</label>
+          <select id="import-market">
+            <option value="">—</option>
+            <option value="tw">TW</option>
+            <option value="jp">JP</option>
+            <option value="sg">SG</option>
+            <option value="us">US</option>
+          </select>
+        </div>
+      </div>
+      <div class="modal-field">
+        <label>Description</label>
+        <textarea id="import-description" rows="4"></textarea>
+      </div>
+    </div>
+    <div class="modal-status" id="import-status"></div>
+    <div class="modal-btns">
+      <button class="btn-modal-cancel" id="import-cancel">Cancel</button>
+      <button class="btn-modal-primary" id="import-fetch">Fetch & Parse</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Feedback Modal ── -->
+<div class="modal-overlay hidden" id="feedback-modal">
+  <div class="modal" style="width:360px">
+    <h3 id="feedback-modal-title">Why was this score off?</h3>
+    <div class="modal-reasons" id="feedback-modal-reasons"></div>
+    <div class="modal-btns">
+      <button class="btn-modal-cancel" id="feedback-cancel">Cancel</button>
+      <button class="btn-modal-primary" id="feedback-confirm">Submit</button>
+    </div>
+  </div>
+</div>
 
 <div class="layout">
 
@@ -419,6 +583,10 @@
 
   // ── Pipeline state ────────────────────────────────────────
   let PIPELINE_IDS = new Set();
+
+  // ── Feedback state ────────────────────────────────────────
+  let FEEDBACK_STATE = {};  // { job_id: { rating } }
+  let _fbJob = null, _fbRating = null;
 
   async function loadPipelineIds() {
     try {
@@ -621,6 +789,13 @@
     const inPipeline = PIPELINE_IDS.has(job.id);
     const pipelineBtn = `<button class="btn-pipeline${inPipeline ? ' in-pipeline' : ''}" data-id="${escHtml(job.id)}" title="${inPipeline ? 'Remove from pipeline' : 'Add to pipeline'}">${inPipeline ? '✓' : '+'}</button>`;
 
+    const fbState = FEEDBACK_STATE[job.id] || {};
+    const fbBtns = m ? `
+<div class="feedback-btns">
+  <button class="btn-fb${fbState.rating === 'up' ? ' up' : ''}" data-fb="up" data-id="${escHtml(job.id)}" title="Score too low / good fit">👍</button>
+  <button class="btn-fb${fbState.rating === 'down' ? ' down' : ''}" data-fb="down" data-id="${escHtml(job.id)}" title="Score too high">👎</button>
+</div>` : '';
+
     return `
 <div class="job-card">
   ${logoHtml}
@@ -637,6 +812,7 @@
       ${marketTag}
       ${sourceTags}
       ${dateTag}
+      ${fbBtns}
     </div>
   </div>
   ${pipelineBtn}
@@ -793,8 +969,208 @@
   document.getElementById('resume-clear').addEventListener('click', clearResume);
 
   document.getElementById('job-list').addEventListener('click', e => {
-    const btn = e.target.closest('.btn-pipeline');
-    if (btn) togglePipeline(btn.dataset.id);
+    const pBtn = e.target.closest('.btn-pipeline');
+    if (pBtn) { togglePipeline(pBtn.dataset.id); return; }
+
+    const fbBtn = e.target.closest('.btn-fb');
+    if (fbBtn) openFeedbackModal(fbBtn.dataset.id, fbBtn.dataset.fb);
+  });
+
+  // ── Refresh jobs ──────────────────────────────────────────
+  let _refreshPoll = null;
+
+  async function startRefresh() {
+    const btn = document.getElementById('btn-refresh');
+    btn.disabled = true;
+    btn.textContent = '⟳ Updating…';
+    await fetch('/api/jobs/refresh', { method: 'POST' });
+    _refreshPoll = setInterval(async () => {
+      try {
+        const res  = await fetch('/api/jobs/refresh/status');
+        const data = await res.json();
+        if (!data.running) {
+          clearInterval(_refreshPoll);
+          _refreshPoll = null;
+          btn.disabled = false;
+          const n = data.new_count;
+          btn.textContent = n > 0 ? `⟳ +${n} new` : '⟳ Refresh';
+          if (n > 0) {
+            setTimeout(() => { btn.textContent = '⟳ Refresh'; }, 5000);
+            await loadJobs();
+          }
+          if (data.error) btn.textContent = '⟳ Error';
+        }
+      } catch(e) {}
+    }, 3000);
+  }
+
+  document.getElementById('btn-refresh').addEventListener('click', startRefresh);
+
+  // ── URL Import ────────────────────────────────────────────
+  let _importParsed = null;
+
+  function openImportModal() {
+    _importParsed = null;
+    document.getElementById('import-url').value = '';
+    document.getElementById('import-preview').style.display = 'none';
+    document.getElementById('import-status').textContent = '';
+    document.getElementById('import-status').className = 'modal-status';
+    const fetchBtn = document.getElementById('import-fetch');
+    fetchBtn.textContent = 'Fetch & Parse';
+    fetchBtn.disabled = false;
+    document.getElementById('import-modal').classList.remove('hidden');
+  }
+
+  document.getElementById('btn-import').addEventListener('click', openImportModal);
+
+  document.getElementById('import-cancel').addEventListener('click', () => {
+    document.getElementById('import-modal').classList.add('hidden');
+  });
+
+  document.getElementById('import-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+  });
+
+  document.getElementById('import-fetch').addEventListener('click', async () => {
+    const btn  = document.getElementById('import-fetch');
+    const stat = document.getElementById('import-status');
+
+    // If preview is showing, this is the "Save Job" step
+    if (_importParsed) {
+      btn.disabled = true;
+      btn.textContent = 'Saving…';
+      stat.textContent = '';
+      const body = {
+        title:       document.getElementById('import-title').value.trim(),
+        company:     document.getElementById('import-company').value.trim(),
+        location:    document.getElementById('import-location').value.trim(),
+        market:      document.getElementById('import-market').value,
+        description: document.getElementById('import-description').value.trim(),
+        url:         document.getElementById('import-url').value.trim(),
+      };
+      try {
+        const res  = await fetch('/api/jobs/import/confirm', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.detail || 'Save failed');
+        stat.textContent = '✓ Job saved! Match score running in background…';
+        stat.className = 'modal-status ok';
+        await loadJobs();
+        setTimeout(() => {
+          document.getElementById('import-modal').classList.add('hidden');
+        }, 2000);
+      } catch(e) {
+        stat.textContent = '✗ ' + e.message;
+        stat.className = 'modal-status err';
+        btn.disabled = false;
+        btn.textContent = 'Save Job';
+      }
+      return;
+    }
+
+    // Fetch & parse
+    const url = document.getElementById('import-url').value.trim();
+    if (!url) { stat.textContent = 'Please enter a URL.'; stat.className = 'modal-status err'; return; }
+    btn.disabled = true;
+    btn.textContent = 'Fetching…';
+    stat.textContent = 'Fetching page and parsing with AI…';
+    stat.className = 'modal-status';
+
+    try {
+      const res  = await fetch('/api/jobs/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Fetch failed');
+
+      _importParsed = data.job;
+      document.getElementById('import-title').value       = data.job.title || '';
+      document.getElementById('import-company').value     = data.job.company || '';
+      document.getElementById('import-location').value    = data.job.location || '';
+      document.getElementById('import-market').value      = data.job.market || '';
+      document.getElementById('import-description').value = data.job.description || '';
+      document.getElementById('import-preview').style.display = 'block';
+      stat.textContent = 'Review and edit the fields below, then click Save Job.';
+      stat.className = 'modal-status ok';
+      btn.disabled = false;
+      btn.textContent = 'Save Job';
+    } catch(e) {
+      stat.textContent = '✗ ' + e.message;
+      stat.className = 'modal-status err';
+      btn.disabled = false;
+      btn.textContent = 'Fetch & Parse';
+    }
+  });
+
+  // ── Feedback ──────────────────────────────────────────────
+  const FB_DOWN_REASONS = [
+    { value: 'wrong_industry',  label: '產業不符 (Wrong industry)' },
+    { value: 'physical_goods',  label: '實體/供應鏈職位 (Physical goods / supply chain)' },
+    { value: 'wrong_level',     label: '職等不符 (Wrong seniority level)' },
+    { value: 'wrong_role_type', label: '非軟體/科技職位 (Not software/tech)' },
+    { value: 'other',           label: '其他 (Other)' },
+  ];
+  const FB_UP_REASONS = [
+    { value: 'good_fit',    label: '非常合適 (Very good fit)' },
+    { value: 'score_low',   label: '分數偏低 (Score seems too low)' },
+    { value: 'other',       label: '其他 (Other)' },
+  ];
+
+  function openFeedbackModal(jobId, rating) {
+    _fbJob = jobId; _fbRating = rating;
+    document.getElementById('feedback-modal-title').textContent =
+      rating === 'down' ? '👎 Why was this score too high?' : '👍 Why was this score too low?';
+    const list = rating === 'down' ? FB_DOWN_REASONS : FB_UP_REASONS;
+    const container = document.getElementById('feedback-modal-reasons');
+    container.innerHTML = list.map(r => `
+      <label class="modal-reason">
+        <input type="radio" name="fb-reason" value="${escHtml(r.value)}">
+        ${escHtml(r.label)}
+      </label>`).join('');
+    const first = container.querySelector('input');
+    if (first) { first.checked = true; first.closest('.modal-reason').classList.add('selected'); }
+    container.querySelectorAll('.modal-reason').forEach(el => {
+      el.addEventListener('click', () => {
+        container.querySelectorAll('.modal-reason').forEach(x => x.classList.remove('selected'));
+        el.classList.add('selected');
+        el.querySelector('input').checked = true;
+      });
+    });
+    document.getElementById('feedback-modal').classList.remove('hidden');
+  }
+
+  document.getElementById('feedback-cancel').addEventListener('click', () => {
+    document.getElementById('feedback-modal').classList.add('hidden');
+    _fbJob = _fbRating = null;
+  });
+
+  document.getElementById('feedback-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) {
+      e.currentTarget.classList.add('hidden');
+      _fbJob = _fbRating = null;
+    }
+  });
+
+  document.getElementById('feedback-confirm').addEventListener('click', async () => {
+    const selected = document.querySelector('input[name=fb-reason]:checked');
+    const reason   = selected ? selected.value : null;
+    document.getElementById('feedback-modal').classList.add('hidden');
+    if (!_fbJob) return;
+
+    await fetch('/api/feedback', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ job_id: _fbJob, rating: _fbRating, reason, resume_id: RESUME_ID }),
+    });
+
+    FEEDBACK_STATE[_fbJob] = { rating: _fbRating };
+    _fbJob = _fbRating = null;
+    renderJobs();
   });
 
   // ── Auto-restore previous resume ─────────────────────────
