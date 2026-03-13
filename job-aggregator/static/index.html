@@ -244,49 +244,6 @@
   .badge-match-mid   { background: #fef9c3; color: #a16207; }
   .badge-match-low   { background: #f3f4f6; color: #6b7280; }
 
-  /* ── Resume restore banner ───────────────────────────────── */
-  .resume-restore {
-    background: #f0f6ff;
-    border: 1.5px solid #bfdbfe;
-    border-radius: 7px;
-    padding: 8px 10px;
-    font-size: 0.78rem;
-    color: #1e40af;
-    margin-bottom: 8px;
-  }
-  .resume-restore .restore-filename {
-    font-weight: 600;
-    display: block;
-    margin-bottom: 5px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .restore-actions { display: flex; gap: 6px; }
-  .btn-restore-yes {
-    flex: 1;
-    padding: 4px 0;
-    background: #4f8ef7;
-    color: #fff;
-    border: none;
-    border-radius: 5px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .btn-restore-yes:hover { background: #3b7de8; }
-  .btn-restore-no {
-    flex: 1;
-    padding: 4px 0;
-    background: none;
-    color: #6b7280;
-    border: 1.5px solid #e5e7eb;
-    border-radius: 5px;
-    font-size: 0.75rem;
-    cursor: pointer;
-  }
-  .btn-restore-no:hover { border-color: #9ca3af; }
-
   /* ── Resume upload card ──────────────────────────────────── */
   .resume-upload-btn {
     display: block;
@@ -433,15 +390,7 @@
     <!-- Resume match -->
     <div class="filter-card">
       <h3>Resume Match</h3>
-      <div id="resume-restore" class="resume-restore" style="display:none">
-        <span class="restore-filename" id="restore-filename"></span>
-        Use previous resume?
-        <div class="restore-actions">
-          <button class="btn-restore-yes" id="btn-restore-yes">Yes</button>
-          <button class="btn-restore-no" id="btn-restore-no">No</button>
-        </div>
-      </div>
-      <label class="resume-upload-btn" id="resume-upload-label">
+      <label class="resume-upload-btn">
         <input type="file" id="resume-input" accept=".pdf" style="display:none">
         📄 Upload PDF
       </label>
@@ -848,37 +797,22 @@
     if (btn) togglePipeline(btn.dataset.id);
   });
 
-  // ── Previous resume restore ───────────────────────────────
+  // ── Auto-restore previous resume ─────────────────────────
   async function checkPreviousResume() {
     try {
       const res = await fetch('/api/resume/matches');
       const data = await res.json();
       if (data.status === 'done' && data.resume_id) {
-        const banner = document.getElementById('resume-restore');
-        document.getElementById('restore-filename').textContent = data.filename || 'Previous resume';
-        banner.style.display = 'block';
-        document.getElementById('resume-upload-label').style.display = 'none';
-
-        document.getElementById('btn-restore-yes').onclick = async () => {
-          banner.style.display = 'none';
-          document.getElementById('resume-upload-label').style.display = 'block';
-          RESUME_ID = data.resume_id;
-          RESUME_STATUS = 'done';
-          MATCH_DATA = {};
-          for (const m of data.matches || []) {
-            MATCH_DATA[m.job_id] = { score: m.score, similarity: m.similarity, explanation: m.explanation };
-          }
-          const sel = document.getElementById('sort-select');
-          if (sel) sel.value = 'best-match';
-          await loadPipelineIds();
-          updateResumeUI();
-          renderJobs();
-        };
-
-        document.getElementById('btn-restore-no').onclick = () => {
-          banner.style.display = 'none';
-          document.getElementById('resume-upload-label').style.display = 'block';
-        };
+        RESUME_ID = data.resume_id;
+        RESUME_STATUS = 'done';
+        MATCH_DATA = {};
+        for (const m of data.matches || []) {
+          MATCH_DATA[m.job_id] = { score: m.score, similarity: m.similarity, explanation: m.explanation };
+        }
+        const sel = document.getElementById('sort-select');
+        if (sel) sel.value = 'best-match';
+        updateResumeUI();
+        renderJobs();
       }
     } catch (e) {}
   }
