@@ -334,6 +334,23 @@
   .btn-pipeline:hover { border-color: #4f8ef7; color: #4f8ef7; background: #f0f6ff; }
   .btn-pipeline.in-pipeline { border-color: #4f8ef7; color: #4f8ef7; background: #f0f6ff; }
 
+  .btn-match-job {
+    flex: 0 0 auto;
+    background: none;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    color: #9ca3af;
+    width: 30px; height: 30px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color .12s, color .12s, background .12s;
+    align-self: center;
+  }
+  .btn-match-job:hover { border-color: #4f8ef7; color: #4f8ef7; background: #f0f6ff; }
+  .btn-match-job.running { border-color: #d97706; color: #d97706; background: #fffbeb; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
   /* ── Refresh button ── */
   #btn-refresh {
     padding: 6px 14px;
@@ -790,6 +807,10 @@
     const inPipeline = PIPELINE_IDS.has(job.id);
     const pipelineBtn = `<button class="btn-pipeline${inPipeline ? ' in-pipeline' : ''}" data-id="${escHtml(job.id)}" title="${inPipeline ? 'Remove from pipeline' : 'Add to pipeline'}">${inPipeline ? '✓' : '+'}</button>`;
 
+    const matchBtn = RESUME_ID
+      ? `<button class="btn-match-job" data-match-id="${escHtml(job.id)}" title="Run match score for this job">⟳</button>`
+      : '';
+
     const fbState = FEEDBACK_STATE[job.id] || {};
     const fbBtns = m ? `
 <div class="feedback-btns">
@@ -816,7 +837,10 @@
       ${fbBtns}
     </div>
   </div>
-  ${pipelineBtn}
+  <div style="display:flex;flex-direction:column;gap:4px;align-items:center">
+    ${pipelineBtn}
+    ${matchBtn}
+  </div>
 </div>`;
   }
 
@@ -999,12 +1023,41 @@
     }
   });
 
-  document.getElementById('job-list').addEventListener('click', e => {
+  document.getElementById('job-list').addEventListener('click', async e => {
     const pBtn = e.target.closest('.btn-pipeline');
     if (pBtn) { togglePipeline(pBtn.dataset.id); return; }
 
     const fbBtn = e.target.closest('.btn-fb');
-    if (fbBtn) openFeedbackModal(fbBtn.dataset.id, fbBtn.dataset.fb);
+    if (fbBtn) { openFeedbackModal(fbBtn.dataset.id, fbBtn.dataset.fb); return; }
+
+    const mBtn = e.target.closest('.btn-match-job');
+    if (mBtn && !mBtn.classList.contains('running')) {
+      const jobId = mBtn.dataset.matchId;
+      mBtn.classList.add('running');
+      mBtn.title = 'Scoring…';
+      try {
+        await fetch(`/api/jobs/${encodeURIComponent(jobId)}/match`, { method: 'POST' });
+        // Poll until this job's score appears
+        let tries = 0;
+        const poll = setInterval(async () => {
+          tries++;
+          const res  = await fetch(`/api/resume/matches?resume_id=${RESUME_ID}`);
+          const data = await res.json();
+          const hit  = (data.matches || []).find(m => m.job_id === jobId && m.score != null);
+          if (hit || tries > 20) {
+            clearInterval(poll);
+            mBtn.classList.remove('running');
+            mBtn.title = 'Run match score for this job';
+            if (hit) {
+              MATCH_DATA[jobId] = { score: hit.score, similarity: hit.similarity, explanation: hit.explanation };
+              renderJobs();
+            }
+          }
+        }, 3000);
+      } catch(e) {
+        mBtn.classList.remove('running');
+      }
+    }
   });
 
   // ── Refresh jobs ──────────────────────────────────────────
