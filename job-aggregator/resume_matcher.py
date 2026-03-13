@@ -104,12 +104,17 @@ def _explain_sync(resume_summary: str, job: dict, candidate_industries: list[str
     )
     industries_hint = ""
     if candidate_industries:
-        industries_hint = f"\nCandidate's target industries: {', '.join(candidate_industries)}. Significantly penalize jobs in unrelated industries (e.g. physical retail, manufacturing, F&B) if the candidate has no background there."
+        industries_hint = f"\nCandidate's target industries: {', '.join(candidate_industries)}. Significantly penalize (score below 40) jobs in unrelated industries if the candidate has no background there."
     prompt = f"""Rate the fit between this candidate and the job. Return ONLY valid JSON:
 {{"score": <0-100>, "explanation": "<1-2 specific sentences in English>"}}
 
+IMPORTANT SCORING RULES:
+- If the job is for physical/offline goods (signals: 供應鏈, 採購, 庫存, supply chain, procurement, inventory, merchandise, 商品, physical retail, F&B, manufacturing, logistics), and the candidate is a tech/software/digital PM with no such background, score it below 35.
+- If the job title says "Product Manager" but the actual role is supply chain, procurement, or physical merchandise management, treat it as a non-tech role.
+- Only score high (70+) if both the role type AND industry match the candidate's background.{industries_hint}
+
 Candidate background:
-{resume_summary[:500]}{industries_hint}
+{resume_summary[:500]}
 
 Job:
 {jd}"""
