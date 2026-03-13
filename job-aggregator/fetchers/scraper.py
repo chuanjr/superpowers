@@ -150,7 +150,7 @@ async def _dump_html(page, name: str) -> None:
         r'https?://[^\s"\'<>]{8,80}(?:api|graphql|search|jobs)[^\s"\'<>]*', html
     )))[:5]
     fetch_hints = list(dict.fromkeys(re.findall(r'fetch\(["\']([^"\']{10,80})["\']', html)))[:5]
-    # Yourator job links: /companies/{slug}/jobs/{slug}
+    # /companies/{slug}/jobs/{slug} — works for both Yourator and CakeResume
     job_links = list(dict.fromkeys(re.findall(
         r"""href=["'](/companies/[^"' >/]+/jobs/[^"' >]+)["']""", html
     )))[:10]
@@ -159,7 +159,7 @@ async def _dump_html(page, name: str) -> None:
         f"\n  __NEXT_DATA__: {has_next_data} ({next_data_size:,} bytes)"
         f"\n  API URL hints: {api_hints}"
         f"\n  fetch() hints: {fetch_hints}"
-        f"\n  Yourator job links found: {job_links}"
+        f"\n  /companies/*/jobs/* links: {job_links}"
         f"\n  Job-related classes: {sorted(classes)[:30]}"
     )
 
@@ -534,20 +534,29 @@ async def _scrape_yourator_page(url: str, label: str, browser: Browser, sem: asy
                         const scope = document.querySelector(
                             '.search-result__cards, [class*="search-result"], main'
                         ) || document.body;
-                        return Array.from(scope.querySelectorAll('a')).map(a => {
+                        return Array.from(scope.querySelectorAll('a[href*="/jobs/"]')).map(a => {
                             let card = a.closest('li, article, [class*="card"], [class*="item"], [class*="result"]');
                             let company = '';
                             if (card) {
+                                // Try class-based selectors first
                                 let companyEl = card.querySelector(
-                                    '[class*="company"], [class*="Company"], [class*="brand"], [class*="Brand"]'
+                                    '[class*="company"], [class*="Company"], [class*="brand"], [class*="Brand"],' +
+                                    '[class*="corp"], [class*="Corp"], [class*="employer"], [class*="Employer"]'
                                 );
-                                if (!companyEl) {
-                                    let cardLinks = Array.from(card.querySelectorAll('a'));
-                                    if (cardLinks.length > 1 && cardLinks[1] !== a) {
-                                        company = cardLinks[1].innerText.trim().split('\\n')[0];
-                                    }
-                                } else {
+                                if (companyEl) {
                                     company = companyEl.innerText.trim().split('\\n')[0];
+                                } else {
+                                    // Yourator: company name is a sibling <a> linking to /companies/{slug}
+                                    let cardLinks = Array.from(card.querySelectorAll('a[href]'));
+                                    for (let cl of cardLinks) {
+                                        let clHref = cl.getAttribute('href') || '';
+                                        if (clHref !== a.getAttribute('href') &&
+                                            clHref.startsWith('/companies/') &&
+                                            !clHref.includes('/jobs/')) {
+                                            company = cl.innerText.trim().split('\\n')[0];
+                                            break;
+                                        }
+                                    }
                                 }
                             }
                             return { href: a.getAttribute('href') || '', text: a.innerText.trim(), company };
