@@ -1,0 +1,476 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pipeline</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f0ede8;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .page-header {
+    padding: 40px 48px 28px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .page-header h1 { font-size: 2rem; font-weight: 700; }
+  .page-header .subtitle { font-size: 0.9rem; color: #6b7280; margin-top: 4px; font-family: monospace; }
+  .page-header .updated { font-size: 0.82rem; color: #9ca3af; }
+  .back-link {
+    position: absolute;
+    top: 16px; left: 48px;
+    font-size: 0.8rem;
+    color: #9ca3af;
+    text-decoration: none;
+  }
+  .back-link:hover { color: #4f8ef7; }
+
+  /* ── Stat cards ── */
+  .stats-row {
+    display: flex;
+    gap: 16px;
+    padding: 0 48px 28px;
+  }
+  .stat-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 18px 24px;
+    flex: 1;
+  }
+  .stat-card .label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #9ca3af;
+    margin-bottom: 8px;
+  }
+  .stat-card .value {
+    font-size: 2rem;
+    font-weight: 300;
+    color: #1a1a2e;
+  }
+  .stat-card .value.blue   { color: #3b82f6; }
+  .stat-card .value.amber  { color: #d97706; }
+  .stat-card .value.black  { color: #1a1a2e; font-weight: 600; }
+
+  /* ── Filter tabs + sort ── */
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 0 48px 20px;
+  }
+  .tab {
+    padding: 7px 18px;
+    border-radius: 20px;
+    border: 1.5px solid #e5e7eb;
+    background: #fff;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #374151;
+    cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  .tab.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+  .tab:hover:not(.active) { border-color: #9ca3af; }
+  .spacer { flex: 1; }
+  .role-count { font-size: 0.82rem; color: #9ca3af; }
+  .sort-label { font-size: 0.82rem; color: #9ca3af; }
+  .sort-sel {
+    padding: 6px 10px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 8px;
+    font-size: 0.82rem;
+    background: #fff;
+    cursor: pointer;
+    outline: none;
+  }
+
+  /* ── Table ── */
+  .table-wrap {
+    margin: 0 48px 40px;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  thead th {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #9ca3af;
+    padding: 12px 16px;
+    text-align: left;
+    border-bottom: 1px solid #f3f4f6;
+    background: #fafafa;
+  }
+  tbody tr { border-bottom: 1px solid #f3f4f6; }
+  tbody tr:last-child { border-bottom: none; }
+  tbody tr:hover { background: #fafafa; }
+  tbody td { padding: 14px 16px; vertical-align: middle; }
+
+  .col-company .company-name { font-weight: 600; font-size: 0.9rem; }
+  .col-company .role-name { font-size: 0.8rem; color: #6b7280; margin-top: 2px; }
+
+  .tag-market {
+    display: inline-block;
+    font-size: 0.72rem;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 500;
+  }
+  .tag-market-tw { background: #fef3c7; color: #92400e; }
+  .tag-market-jp { background: #fee2e2; color: #991b1b; }
+  .tag-market-sg { background: #dbeafe; color: #1e40af; }
+  .tag-market-us { background: #d1fae5; color: #065f46; }
+  .tag-market-unknown { background: #f3f4f6; color: #6b7280; }
+
+  .fit-score { font-weight: 700; font-size: 0.95rem; min-width: 36px; display: inline-block; }
+  .fit-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .fit-bar {
+    flex: 1;
+    height: 6px;
+    background: #f3f4f6;
+    border-radius: 3px;
+    min-width: 60px;
+    max-width: 100px;
+    overflow: hidden;
+  }
+  .fit-bar-fill { height: 100%; border-radius: 3px; background: #1a1a2e; }
+  .fit-bar-fill.high { background: #16a34a; }
+  .fit-bar-fill.mid  { background: #d97706; }
+  .fit-bar-fill.low  { background: #9ca3af; }
+
+  .badge-verdict {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 20px;
+  }
+  .badge-verdict-recommend { background: #dcfce7; color: #15803d; }
+  .badge-verdict-pass      { background: #f3f4f6; color: #6b7280; }
+  .badge-verdict-none      { background: #f9fafb; color: #d1d5db; }
+
+  .status-sel {
+    padding: 4px 8px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    background: #fff;
+    cursor: pointer;
+    outline: none;
+    min-width: 120px;
+  }
+  .status-sel:focus { border-color: #4f8ef7; }
+
+  .notes-input {
+    width: 100%;
+    min-width: 140px;
+    border: none;
+    background: transparent;
+    font-size: 0.8rem;
+    color: #374151;
+    outline: none;
+    padding: 2px 4px;
+    border-radius: 4px;
+    resize: none;
+    font-family: inherit;
+  }
+  .notes-input:focus { background: #f9fafb; border: 1px solid #e5e7eb; }
+
+  .btn-remove {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #d1d5db;
+    font-size: 1rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    transition: color .12s;
+  }
+  .btn-remove:hover { color: #ef4444; }
+
+  .col-date { font-size: 0.78rem; color: #9ca3af; white-space: nowrap; }
+
+  .empty {
+    text-align: center;
+    padding: 60px 20px;
+    color: #9ca3af;
+  }
+</style>
+</head>
+<body>
+
+<a href="/" class="back-link">← Job Board</a>
+
+<div class="page-header">
+  <div>
+    <h1 id="header-name">Pipeline</h1>
+    <div class="subtitle" id="header-subtitle">Job Search Tracker</div>
+  </div>
+  <div class="updated" id="header-updated"></div>
+</div>
+
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="label">Total Reviewed</div>
+    <div class="value" id="stat-total">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Recommended</div>
+    <div class="value" id="stat-recommended">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Applied</div>
+    <div class="value blue" id="stat-applied">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Interviewing</div>
+    <div class="value amber" id="stat-interviewing">—</div>
+  </div>
+  <div class="stat-card">
+    <div class="label">Avg Fit Score</div>
+    <div class="value black" id="stat-avg">—</div>
+  </div>
+</div>
+
+<div class="toolbar">
+  <button class="tab active" data-filter="all">All</button>
+  <button class="tab" data-filter="recommended">Recommended</button>
+  <button class="tab" data-filter="applied">Applied</button>
+  <button class="tab" data-filter="interviewing">Interviewing</button>
+  <button class="tab" data-filter="pass">Pass</button>
+  <div class="spacer"></div>
+  <span class="role-count" id="role-count"></span>
+  <span class="sort-label">Sort by</span>
+  <select class="sort-sel" id="sort-sel">
+    <option value="score-desc">Fit score (high)</option>
+    <option value="score-asc">Fit score (low)</option>
+    <option value="date-desc">Newest first</option>
+    <option value="company">Company A→Z</option>
+  </select>
+</div>
+
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th>Company / Role</th>
+        <th>Market</th>
+        <th>Fit Score</th>
+        <th>Verdict</th>
+        <th>Status</th>
+        <th>Notes</th>
+        <th>Added</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody id="pipeline-tbody">
+      <tr><td colspan="8"><div class="empty">Loading…</div></td></tr>
+    </tbody>
+  </table>
+</div>
+
+<script>
+  let ALL_ENTRIES = [];
+  let FILTER = 'all';
+
+  function marketTagClass(m) {
+    if (m === 'tw') return 'tag-market-tw';
+    if (m === 'jp') return 'tag-market-jp';
+    if (m === 'sg') return 'tag-market-sg';
+    if (m === 'us') return 'tag-market-us';
+    return 'tag-market-unknown';
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    return d.toLocaleDateString('en-US', { month: '2-digit', day: '2-digit' });
+  }
+
+  function escHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  async function load() {
+    const res  = await fetch('/api/pipeline');
+    const data = await res.json();
+    ALL_ENTRIES = data.entries || [];
+
+    const identity = data.identity || {};
+    if (identity.name) {
+      document.getElementById('header-name').textContent = identity.name;
+      document.getElementById('header-subtitle').textContent =
+        (identity.headline ? identity.headline + ' — ' : '') + 'Job Search Tracker';
+    }
+    document.getElementById('header-updated').textContent =
+      'Updated ' + new Date().toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' });
+
+    updateStats();
+    render();
+  }
+
+  function updateStats() {
+    const total = ALL_ENTRIES.length;
+    const recommended = ALL_ENTRIES.filter(e => e.status === 'recommended').length;
+    const applied = ALL_ENTRIES.filter(e => e.status === 'applied').length;
+    const interviewing = ALL_ENTRIES.filter(e => e.status === 'interviewing').length;
+    const scores = ALL_ENTRIES.map(e => e.score).filter(s => s != null);
+    const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+
+    document.getElementById('stat-total').textContent = total;
+    document.getElementById('stat-recommended').textContent = recommended;
+    document.getElementById('stat-applied').textContent = applied;
+    document.getElementById('stat-interviewing').textContent = interviewing;
+    document.getElementById('stat-avg').textContent = avg != null ? avg + '%' : '—';
+  }
+
+  function getFiltered() {
+    let entries = [...ALL_ENTRIES];
+    if (FILTER !== 'all') entries = entries.filter(e => e.status === FILTER);
+
+    const sort = document.getElementById('sort-sel').value;
+    if (sort === 'score-desc') {
+      entries.sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+    } else if (sort === 'score-asc') {
+      entries.sort((a, b) => (a.score ?? 0) - (b.score ?? 0));
+    } else if (sort === 'date-desc') {
+      entries.sort((a, b) => (b.added_at || '').localeCompare(a.added_at || ''));
+    } else if (sort === 'company') {
+      entries.sort((a, b) => (a.company || '').localeCompare(b.company || ''));
+    }
+    return entries;
+  }
+
+  function render() {
+    const entries = getFiltered();
+    document.getElementById('role-count').textContent = `${entries.length} role${entries.length !== 1 ? 's' : ''}`;
+
+    const tbody = document.getElementById('pipeline-tbody');
+    if (!entries.length) {
+      tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No entries${FILTER !== 'all' ? ' in this stage' : ''}.</div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = entries.map(e => {
+      const score = e.score ?? (e.similarity != null ? Math.round(e.similarity * 100) : null);
+      const scoreStr = score != null ? score + '%' : '—';
+      const barCls = score >= 70 ? 'high' : score >= 40 ? 'mid' : 'low';
+      const barW = score != null ? score : 0;
+
+      const market = (e.market || '').toUpperCase();
+      const marketTag = market
+        ? `<span class="tag-market ${marketTagClass(e.market)}">${escHtml(market)}</span>` : '—';
+
+      const verdictCls = e.verdict === 'recommend' ? 'badge-verdict-recommend'
+                       : e.verdict === 'pass' ? 'badge-verdict-pass' : 'badge-verdict-none';
+      const verdictLabel = e.verdict === 'recommend' ? 'Recommend'
+                         : e.verdict === 'pass' ? 'Pass' : '—';
+
+      const titleText = e.title ? `${e.company || ''} / ${e.title}` : (e.company || '');
+      const tip = e.explanation ? ` title="${escHtml(e.explanation)}"` : '';
+
+      return `<tr data-job-id="${escHtml(e.job_id)}">
+  <td class="col-company">
+    <div class="company-name"><a href="${escHtml(e.url || '#')}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${escHtml(e.company || '—')}</a></div>
+    <div class="role-name">${escHtml(e.title || '')}</div>
+  </td>
+  <td>${marketTag}</td>
+  <td>
+    <div class="fit-bar-wrap"${tip}>
+      <span class="fit-score">${scoreStr}</span>
+      <div class="fit-bar"><div class="fit-bar-fill ${barCls}" style="width:${barW}%"></div></div>
+    </div>
+  </td>
+  <td><span class="badge-verdict ${verdictCls}">${verdictLabel}</span></td>
+  <td>
+    <select class="status-sel" data-job-id="${escHtml(e.job_id)}">
+      <option value="recommended" ${e.status === 'recommended' ? 'selected' : ''}>Recommended</option>
+      <option value="applied"     ${e.status === 'applied'     ? 'selected' : ''}>Applied</option>
+      <option value="interviewing"${e.status === 'interviewing'? 'selected' : ''}>Interviewing</option>
+      <option value="pass"        ${e.status === 'pass'        ? 'selected' : ''}>Pass</option>
+    </select>
+  </td>
+  <td>
+    <textarea class="notes-input" rows="1" data-job-id="${escHtml(e.job_id)}" placeholder="Add notes…">${escHtml(e.notes || '')}</textarea>
+  </td>
+  <td class="col-date">${fmtDate(e.added_at)}</td>
+  <td><button class="btn-remove" data-job-id="${escHtml(e.job_id)}" title="Remove">×</button></td>
+</tr>`;
+    }).join('');
+  }
+
+  // ── Event delegation ──────────────────────────────────────
+  document.getElementById('pipeline-tbody').addEventListener('change', async e => {
+    const sel = e.target.closest('.status-sel');
+    if (sel) {
+      const jobId = sel.dataset.jobId;
+      await fetch(`/api/pipeline/${encodeURIComponent(jobId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: sel.value }),
+      });
+      const entry = ALL_ENTRIES.find(x => x.job_id === jobId);
+      if (entry) entry.status = sel.value;
+      updateStats();
+      if (FILTER !== 'all') render();
+    }
+  });
+
+  document.getElementById('pipeline-tbody').addEventListener('blur', async e => {
+    const ta = e.target.closest('.notes-input');
+    if (ta) {
+      const jobId = ta.dataset.jobId;
+      await fetch(`/api/pipeline/${encodeURIComponent(jobId)}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ notes: ta.value }),
+      });
+      const entry = ALL_ENTRIES.find(x => x.job_id === jobId);
+      if (entry) entry.notes = ta.value;
+    }
+  }, true);
+
+  document.getElementById('pipeline-tbody').addEventListener('click', async e => {
+    const btn = e.target.closest('.btn-remove');
+    if (btn) {
+      const jobId = btn.dataset.jobId;
+      await fetch(`/api/pipeline/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+      ALL_ENTRIES = ALL_ENTRIES.filter(x => x.job_id !== jobId);
+      updateStats();
+      render();
+    }
+  });
+
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      FILTER = t.dataset.filter;
+      render();
+    });
+  });
+
+  document.getElementById('sort-sel').addEventListener('change', render);
+
+  load();
+</script>
+
+</body>
+</html>

@@ -69,6 +69,28 @@ def init_db(path: Path = DB_PATH) -> None:
             UNIQUE(resume_id, job_id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS pipeline (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id      TEXT NOT NULL REFERENCES jobs(id),
+            resume_id   INTEGER REFERENCES resumes(id),
+            status      TEXT NOT NULL DEFAULT 'recommended',
+            verdict     TEXT,
+            notes       TEXT,
+            added_at    TEXT NOT NULL,
+            reviewed_at TEXT,
+            UNIQUE(job_id)
+        )
+    """)
+    # Migration: add name/headline to resumes
+    try:
+        conn.execute("ALTER TABLE resumes ADD COLUMN name TEXT")
+    except sqlite3.OperationalError:
+        pass
+    try:
+        conn.execute("ALTER TABLE resumes ADD COLUMN headline TEXT")
+    except sqlite3.OperationalError:
+        pass
     conn.commit()
     conn.close()
 
@@ -238,3 +260,92 @@ def get_matches(resume_id: int) -> list[dict]:
         d["sources"] = json.loads(d.get("sources") or "[]")
         result.append(d)
     return result
+
+
+# ── Resume name/headline ───────────────────────────────────────────────────────
+
+def update_resume_identity(resume_id: int, name: str, headline: str) -> None:
+    with _conn() as conn:
+        conn.execute("UPDATE resumes SET name = ?, headline = ? WHERE id = ?",
+                     (name, headline, resume_id))
+        conn.commit()
+
+
+def get_latest_resume_identity() -> dict:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT name, headline FROM resumes WHERE name IS NOT NULL ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else {"name": "", "headline": ""}
+
+
+# ── Pipeline ───────────────────────────────────────────────────────────────────
+
+def add_to_pipeline(job_id: str, resume_id: Optional[int] = None,
+                    status: str = "recommended", verdict: Optional[str] = None) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        conn.execute("""
+            INSERT INTO pipeline (job_id, resume_id, status, verdict, added_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(job_id) DO UPDATE SET
+                resume_id = COALESCE(excluded.resume_id, resume_id),
+                status    = excluded.status,
+                verdict   = COALESCE(excluded.verdict, verdict)
+        """, (job_id, resume_id, status, verdict, now))
+        conn.commit()
+
+
+def get_pipeline() -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute("""
+            SELECT
+                p.id, p.job_id, p.resume_id, p.status, p.verdict, p.notes,
+                p.added_at, p.reviewed_at,
+                j.title, j.company, j.location, j.market, j.url, j.logo_url, j.sources,
+                rjm.score, rjm.similarity, rjm.explanation
+            FROM pipeline p
+            JOIN jobs j ON j.id = p.job_id
+            LEFT JOIN resume_job_matches rjm ON rjm.job_id = p.job_id
+                AND rjm.resume_id = p.resume_id
+            ORDER BY COALESCE(rjm.score, CAST(rjm.similarity * 100 AS INTEGER)) DESC NULLS LAST
+        """).fetchall()
+    result = []
+    for row in rows:
+        d = dict(row)
+        d["sources"] = json.loads(d.get("sources") or "[]")
+        result.append(d)
+    return result
+
+
+def update_pipeline_entry(job_id: str, status: Optional[str] = None,
+                           verdict: Optional[str] = None,
+                           notes: Optional[str] = None,
+                           reviewed_at: Optional[str] = None) -> None:
+    updates, values = [], []
+    if status is not None:
+        updates.append("status = ?"); values.append(status)
+    if verdict is not None:
+        updates.append("verdict = ?"); values.append(verdict)
+    if notes is not None:
+        updates.append("notes = ?"); values.append(notes)
+    if reviewed_at is not None:
+        updates.append("reviewed_at = ?"); values.append(reviewed_at)
+    if not updates:
+        return
+    values.append(job_id)
+    with _conn() as conn:
+        conn.execute(f"UPDATE pipeline SET {', '.join(updates)} WHERE job_id = ?", values)
+        conn.commit()
+
+
+def remove_from_pipeline(job_id: str) -> None:
+    with _conn() as conn:
+        conn.execute("DELETE FROM pipeline WHERE job_id = ?", (job_id,))
+        conn.commit()
+
+
+def get_pipeline_job_ids() -> set[str]:
+    with _conn() as conn:
+        rows = conn.execute("SELECT job_id FROM pipeline").fetchall()
+    return {r["job_id"] for r in rows}

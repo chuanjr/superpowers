@@ -23,6 +23,8 @@ from store import (
     get_all_jobs_with_embeddings,
     update_job_embedding,
     upsert_match,
+    update_resume_identity,
+    add_to_pipeline,
 )
 
 _EMBED_MODEL = "models/text-embedding-004"
@@ -57,6 +59,8 @@ def _parse_resume_sync(raw_text: str) -> dict:
     client = _get_claude()
     prompt = f"""Extract structured information from this résumé. Return ONLY valid JSON with exactly these fields:
 {{
+  "name": "<full name of the candidate>",
+  "headline": "<current or most recent job title, e.g. Senior Product Manager>",
   "skills": ["skill1", "skill2"],
   "titles": ["title1", "title2"],
   "years_experience": <integer>,
@@ -91,18 +95,21 @@ def _embed_sync(text: str, task_type: str) -> list[float]:
     return result["embedding"]
 
 
-def _explain_sync(resume_summary: str, job: dict) -> tuple[int, str]:
+def _explain_sync(resume_summary: str, job: dict, candidate_industries: list[str] | None = None) -> tuple[int, str]:
     """Call Claude to score fit (0-100) and write a brief explanation."""
     client = _get_claude()
     jd = (
         f"{job.get('title', '')} at {job.get('company', '')}\n"
         f"{(job.get('description') or '')[:800]}"
     )
+    industries_hint = ""
+    if candidate_industries:
+        industries_hint = f"\nCandidate's target industries: {', '.join(candidate_industries)}. Significantly penalize jobs in unrelated industries (e.g. physical retail, manufacturing, F&B) if the candidate has no background there."
     prompt = f"""Rate the fit between this candidate and the job. Return ONLY valid JSON:
 {{"score": <0-100>, "explanation": "<1-2 specific sentences in English>"}}
 
 Candidate background:
-{resume_summary[:500]}
+{resume_summary[:500]}{industries_hint}
 
 Job:
 {jd}"""
@@ -139,12 +146,15 @@ async def process_matching(resume_id: int, raw_text: str) -> None:
         # 1. Parse résumé with Claude
         parsed = await asyncio.to_thread(_parse_resume_sync, raw_text)
         update_resume(resume_id, parsed_json=json.dumps(parsed))
+        if parsed.get("name"):
+            update_resume_identity(resume_id, parsed["name"], parsed.get("headline", ""))
 
         # 2. Embed résumé (query-style)
         resume_text = (
             f"{parsed.get('summary', '')} "
             f"Skills: {', '.join(parsed.get('skills', []))}. "
-            f"Titles: {', '.join(parsed.get('titles', []))}."
+            f"Titles: {', '.join(parsed.get('titles', []))}. "
+            f"Industries: {', '.join(parsed.get('industries', []))}."
         )
         resume_emb = await asyncio.to_thread(_embed_sync, resume_text, "retrieval_query")
         update_resume(resume_id, embedding=json.dumps(resume_emb))
@@ -183,15 +193,24 @@ async def process_matching(resume_id: int, raw_text: str) -> None:
         job_map = {j["id"]: j for j in get_all_jobs()}
 
         summary = parsed.get("summary", raw_text[:300])
+        candidate_industries = parsed.get("industries", [])
 
         async def _explain_job(sim: float, job_id: str) -> None:
             job = job_map.get(job_id)
             if not job:
                 return
-            score, explanation = await asyncio.to_thread(_explain_sync, summary, job)
+            score, explanation = await asyncio.to_thread(_explain_sync, summary, job, candidate_industries)
             upsert_match(resume_id, job_id, similarity=sim, score=score, explanation=explanation)
 
-        await asyncio.gather(*[_explain_job(sim, jid) for sim, jid in top_30])
+        for sim, jid in top_30:
+            await _explain_job(sim, jid)
+
+        # Auto-add top matches (score >= 70) to pipeline as "recommended"
+        from store import get_matches as _get_matches
+        for match in _get_matches(resume_id):
+            if (match.get("score") or 0) >= 70:
+                add_to_pipeline(match["job_id"], resume_id=resume_id,
+                                status="recommended", verdict="recommend")
 
         update_resume(resume_id, status="done")
 

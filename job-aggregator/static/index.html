@@ -297,6 +297,43 @@
     font-size: 0.9rem;
   }
 
+  #pipeline-nav {
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #4f8ef7;
+    white-space: nowrap;
+    padding: 6px 12px;
+    border: 1.5px solid #4f8ef7;
+    border-radius: 7px;
+    transition: background .15s;
+  }
+  #pipeline-nav:hover { background: #f0f6ff; }
+  #pipeline-nav span {
+    background: #4f8ef7;
+    color: #fff;
+    border-radius: 10px;
+    padding: 1px 6px;
+    font-size: 0.72rem;
+    margin-left: 4px;
+  }
+
+  .btn-pipeline {
+    flex: 0 0 auto;
+    background: none;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 1rem;
+    color: #9ca3af;
+    width: 30px; height: 30px;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: border-color .12s, color .12s, background .12s;
+    align-self: center;
+  }
+  .btn-pipeline:hover { border-color: #4f8ef7; color: #4f8ef7; background: #f0f6ff; }
+  .btn-pipeline.in-pipeline { border-color: #4f8ef7; color: #4f8ef7; background: #f0f6ff; }
+
   @media (max-width: 640px) {
     aside { display: none; }
     .layout { padding: 12px 10px; }
@@ -311,6 +348,7 @@
   <h1>Job <span>Board</span></h1>
   <input id="search" type="search" placeholder="Search title, company…" autocomplete="off">
   <div id="stats-bar">loading…</div>
+  <a href="/pipeline" id="pipeline-nav">Pipeline <span id="pipeline-count"></span></a>
 </header>
 
 <div class="layout">
@@ -378,6 +416,34 @@
   let RESUME_ID  = null;
   let RESUME_STATUS = 'none'; // none | processing | done | error:…
   let _pollTimer = null;
+
+  // ── Pipeline state ────────────────────────────────────────
+  let PIPELINE_IDS = new Set();
+
+  async function loadPipelineIds() {
+    try {
+      const res = await fetch('/api/pipeline/ids');
+      const data = await res.json();
+      PIPELINE_IDS = new Set(data.ids || []);
+      document.getElementById('pipeline-count').textContent = PIPELINE_IDS.size || '';
+    } catch (e) {}
+  }
+
+  async function togglePipeline(jobId) {
+    if (PIPELINE_IDS.has(jobId)) {
+      await fetch(`/api/pipeline/${encodeURIComponent(jobId)}`, { method: 'DELETE' });
+      PIPELINE_IDS.delete(jobId);
+    } else {
+      await fetch('/api/pipeline', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ job_id: jobId, resume_id: RESUME_ID, status: 'recommended' }),
+      });
+      PIPELINE_IDS.add(jobId);
+    }
+    document.getElementById('pipeline-count').textContent = PIPELINE_IDS.size || '';
+    renderJobs();
+  }
 
   // ── Fetch data ────────────────────────────────────────────
   async function loadJobs() {
@@ -552,6 +618,9 @@
     const company = job.company ? `<span class="company">${escHtml(job.company)}</span>` : '';
     const location = job.location ? `<span class="sep">·</span>${escHtml(job.location)}` : '';
 
+    const inPipeline = PIPELINE_IDS.has(job.id);
+    const pipelineBtn = `<button class="btn-pipeline${inPipeline ? ' in-pipeline' : ''}" data-id="${escHtml(job.id)}" title="${inPipeline ? 'Remove from pipeline' : 'Add to pipeline'}">${inPipeline ? '✓' : '+'}</button>`;
+
     return `
 <div class="job-card">
   ${logoHtml}
@@ -570,6 +639,7 @@
       ${dateTag}
     </div>
   </div>
+  ${pipelineBtn}
 </div>`;
   }
 
@@ -666,6 +736,7 @@
       if (RESUME_STATUS === 'done') {
         const sel = document.getElementById('sort-select');
         if (sel) sel.value = 'best-match';
+        loadPipelineIds();
       }
       updateResumeUI();
       renderJobs();
@@ -721,8 +792,14 @@
   });
   document.getElementById('resume-clear').addEventListener('click', clearResume);
 
+  document.getElementById('job-list').addEventListener('click', e => {
+    const btn = e.target.closest('.btn-pipeline');
+    if (btn) togglePipeline(btn.dataset.id);
+  });
+
   // ── Boot ──────────────────────────────────────────────────
   loadJobs();
+  loadPipelineIds();
 </script>
 
 </body>

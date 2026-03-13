@@ -13,7 +13,11 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
-from store import init_db, get_all_jobs, save_resume, get_resume, get_latest_resume, get_matches
+from store import (
+    init_db, get_all_jobs, save_resume, get_resume, get_latest_resume, get_matches,
+    add_to_pipeline, get_pipeline, update_pipeline_entry, remove_from_pipeline,
+    get_pipeline_job_ids, get_latest_resume_identity,
+)
 
 app = FastAPI(title="Job Board")
 
@@ -85,6 +89,52 @@ def resume_matches(resume_id: int | None = None) -> JSONResponse:
     })
 
 
+# ── Pipeline endpoints ─────────────────────────────────────────────────────────
+
+@app.post("/api/pipeline")
+def pipeline_add(body: dict) -> JSONResponse:
+    job_id = body.get("job_id")
+    if not job_id:
+        raise HTTPException(status_code=400, detail="job_id required")
+    add_to_pipeline(
+        job_id=job_id,
+        resume_id=body.get("resume_id"),
+        status=body.get("status", "recommended"),
+        verdict=body.get("verdict"),
+    )
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/pipeline")
+def pipeline_list() -> JSONResponse:
+    entries = get_pipeline()
+    identity = get_latest_resume_identity()
+    return JSONResponse({"entries": entries, "identity": identity})
+
+
+@app.get("/api/pipeline/ids")
+def pipeline_ids() -> JSONResponse:
+    return JSONResponse({"ids": list(get_pipeline_job_ids())})
+
+
+@app.patch("/api/pipeline/{job_id}")
+async def pipeline_update(job_id: str, body: dict) -> JSONResponse:
+    update_pipeline_entry(
+        job_id=job_id,
+        status=body.get("status"),
+        verdict=body.get("verdict"),
+        notes=body.get("notes"),
+        reviewed_at=body.get("reviewed_at"),
+    )
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/api/pipeline/{job_id}")
+def pipeline_remove(job_id: str) -> JSONResponse:
+    remove_from_pipeline(job_id)
+    return JSONResponse({"ok": True})
+
+
 # ── Static / SPA ───────────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
@@ -93,6 +143,11 @@ app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 @app.get("/")
 def root() -> FileResponse:
     return FileResponse(str(_STATIC / "index.html"))
+
+
+@app.get("/pipeline")
+def pipeline_page() -> FileResponse:
+    return FileResponse(str(_STATIC / "pipeline.html"))
 
 
 if __name__ == "__main__":
