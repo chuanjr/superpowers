@@ -134,14 +134,29 @@ async def _dump_html(page, name: str) -> None:
     html = await page.content()
     with open(path, "w") as f:
         f.write(html)
-    # Print job-related class names inline so we can diagnose without reading the file
     import re
     classes: set[str] = set()
     for m in re.finditer(r'class="([^"]+)"', html):
         for c in m.group(1).split():
             if re.search(r'job|Job|card|Card|item|Item|result|Result|search|Search|position|Position|list|List', c):
                 classes.add(c)
-    print(f"[DEBUG] Saved HTML to {path}. Job-related classes: {sorted(classes)[:30]}")
+    # Extra diagnostics to understand what Yourator actually served
+    has_next_data = "__NEXT_DATA__" in html
+    next_data_size = 0
+    m2 = re.search(r'<script id="__NEXT_DATA__"[^>]*>(.+?)</script>', html, re.DOTALL)
+    if m2:
+        next_data_size = len(m2.group(1))
+    api_hints = list(dict.fromkeys(re.findall(
+        r'https?://[^\s"\'<>]{8,80}(?:api|graphql|search|jobs)[^\s"\'<>]*', html
+    )))[:5]
+    fetch_hints = list(dict.fromkeys(re.findall(r'fetch\(["\']([^"\']{10,80})["\']', html)))[:5]
+    print(
+        f"[DEBUG] Saved HTML to {path} ({len(html):,} bytes)."
+        f"\n  __NEXT_DATA__: {has_next_data} ({next_data_size:,} bytes)"
+        f"\n  API URL hints: {api_hints}"
+        f"\n  fetch() hints: {fetch_hints}"
+        f"\n  Job-related classes: {sorted(classes)[:30]}"
+    )
 
 
 _ARTICLE_SUFFIXES = ("jobs", "roles", "positions", "openings", "opportunities", "careers")
