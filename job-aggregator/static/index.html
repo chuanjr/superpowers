@@ -370,6 +370,7 @@
 
 <script>
   let ALL_JOBS = [];
+  let NEWEST_JOB_TIME = 0;
   const NOW = Date.now();
 
   // ── Resume match state ────────────────────────────────────
@@ -383,6 +384,7 @@
     try {
       const res = await fetch('/api/jobs');
       ALL_JOBS = await res.json();
+      NEWEST_JOB_TIME = Math.max(...ALL_JOBS.map(j => j.first_seen_at ? new Date(j.first_seen_at).getTime() : 0));
       buildFilters();
       renderJobs();
     } catch (e) {
@@ -497,7 +499,7 @@
   // ── Render ────────────────────────────────────────────────
   function isNew(job) {
     if (!job.first_seen_at) return false;
-    return NOW - new Date(job.first_seen_at).getTime() < 24 * 3600 * 1000;
+    return new Date(job.first_seen_at).getTime() === NEWEST_JOB_TIME;
   }
 
   function marketTagClass(market) {
