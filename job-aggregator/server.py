@@ -21,7 +21,8 @@ from fastapi.staticfiles import StaticFiles
 import uvicorn
 
 from store import (
-    init_db, get_all_jobs, save_resume, get_resume, get_latest_resume, get_matches,
+    init_db, recover_stale_resumes, get_all_jobs, save_resume, get_resume,
+    get_latest_resume, get_matches,
     add_to_pipeline, get_pipeline, update_pipeline_entry, remove_from_pipeline,
     get_pipeline_job_ids, get_latest_resume_identity,
     get_job, save_feedback,
@@ -373,4 +374,5 @@ if __name__ == "__main__":
             port = int(sys.argv[i + 1])
 
     init_db()
+    recover_stale_resumes()
     uvicorn.run(app, host="127.0.0.1", port=port)

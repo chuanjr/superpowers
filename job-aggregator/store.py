@@ -210,6 +210,30 @@ def get_latest_resume() -> Optional[dict]:
     return dict(row) if row else None
 
 
+def recover_stale_resumes() -> None:
+    """On server startup, mark any résumé stuck in 'processing' as done or error.
+
+    A 'processing' status that survives a server restart means the background
+    task was killed mid-run.  If matches already exist we call it 'done';
+    otherwise we mark it as an error so the user knows to re-upload.
+    """
+    with _conn() as conn:
+        stuck = conn.execute(
+            "SELECT id FROM resumes WHERE status = 'processing'"
+        ).fetchall()
+        for row in stuck:
+            rid = row["id"]
+            has_matches = conn.execute(
+                "SELECT 1 FROM resume_job_matches WHERE resume_id = ? LIMIT 1",
+                (rid,),
+            ).fetchone()
+            new_status = "done" if has_matches else "error: interrupted"
+            conn.execute(
+                "UPDATE resumes SET status = ? WHERE id = ?", (new_status, rid)
+            )
+        conn.commit()
+
+
 # ── Job embedding helpers ──────────────────────────────────────────────────────
 
 def get_jobs_needing_embedding() -> list[dict]:

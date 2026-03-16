@@ -1262,18 +1262,29 @@
     try {
       const res = await fetch('/api/resume/matches');
       const data = await res.json();
-      if (data.status === 'done' && data.resume_id) {
-        RESUME_ID = data.resume_id;
+      if (!data.resume_id) return;
+
+      RESUME_ID = data.resume_id;
+
+      // Restore whatever matches exist (may be partial if processing was interrupted)
+      MATCH_DATA = {};
+      for (const m of data.matches || []) {
+        MATCH_DATA[m.job_id] = { score: m.score, similarity: m.similarity, explanation: m.explanation };
+      }
+
+      if (data.status === 'done') {
         RESUME_STATUS = 'done';
-        MATCH_DATA = {};
-        for (const m of data.matches || []) {
-          MATCH_DATA[m.job_id] = { score: m.score, similarity: m.similarity, explanation: m.explanation };
-        }
         const sel = document.getElementById('sort-select');
         if (sel) sel.value = 'best-match';
-        updateResumeUI();
-        renderJobs();
+      } else if (data.status === 'processing') {
+        RESUME_STATUS = 'processing';
+        // Resume polling so we pick up the final result
+        if (_pollTimer) clearInterval(_pollTimer);
+        _pollTimer = setInterval(fetchMatches, 4000);
       }
+
+      updateResumeUI();
+      renderJobs();
     } catch (e) {}
   }
 
