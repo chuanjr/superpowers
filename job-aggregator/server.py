@@ -756,10 +756,19 @@ def review_list() -> JSONResponse:
     """Return all jobs in the triage queue, ordered by match score."""
     import json as _json
     from store import get_triage
+    import json as _json
     entries = get_triage()
-    # Strip description to keep response small
     for e in entries:
         e.pop("description", None)
+        # Backfill culture_score from triage summary if package hasn't been generated yet
+        if e.get("culture_score") is None and e.get("summary_json"):
+            try:
+                sj = _json.loads(e["summary_json"])
+                cs = sj.get("culture_score")
+                if cs is not None:
+                    e["culture_score"] = cs
+            except Exception:
+                pass
     return JSONResponse({"entries": entries})
 
 

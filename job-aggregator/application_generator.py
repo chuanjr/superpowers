@@ -35,6 +35,8 @@ def generate_triage_summary_sync(resume_summary: str, jd_text: str,
                                   job_title: str, company: str,
                                   culture_dna: dict | None = None,
                                   match_explanation: str | None = None) -> dict:
+    if not jd_text.strip():
+        jd_text = "[Job description not available — assess based on job title and company name only]"
     """Generate a quick career coach brief for triage review.
 
     Single Claude call (haiku, ~10s). Returns structured summary with:
@@ -313,6 +315,8 @@ async def generate_package(job_id: str, resume_id: int,
     stories      = get_stories()
 
     jd_text   = job.get("description") or ""
+    if not jd_text.strip():
+        jd_text = "[Job description not available — assess based on job title and company name only]"
     job_title = job.get("title") or ""
     company   = job.get("company") or ""
 

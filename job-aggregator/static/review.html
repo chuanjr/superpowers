@@ -479,6 +479,8 @@
     const data = await fetch('/api/review').then(r => r.json());
     ALL_ENTRIES = data.entries || [];
     render();
+    // Auto-generate briefs for first 10 entries that don't have a complete summary
+    ALL_ENTRIES.filter(e => !getSummary(e)?.headline).slice(0, 10).forEach(e => generateBrief(e.job_id));
   }
 
   function getFiltered() {
@@ -667,7 +669,8 @@
       _expandedCards.add(jobId);
       // Auto-generate brief if not yet done
       const entry = ALL_ENTRIES.find(e => e.job_id === jobId);
-      if (entry && !entry.summary_json && entry.summary_status !== 'pending') {
+      const hasSummary = getSummary(entry)?.headline;
+      if (entry && !hasSummary && entry.summary_status !== 'pending') {
         generateBrief(jobId);
       }
     }
