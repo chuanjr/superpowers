@@ -161,6 +161,59 @@ def fetch_104_company_info(job_url: str) -> list[str]:
     return snippets
 
 
+# ── JD auto-fetch ──────────────────────────────────────────────────────────────
+
+def _strip_html(html: str) -> str:
+    text = re.sub(r"<[^>]+>", " ", html)
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def fetch_jd_from_url(url: str) -> str:
+    """Try to fetch a job description from its URL. Returns plain text or empty string."""
+    if not url:
+        return ""
+
+    # 104.com.tw: use the job content API which returns structured JSON
+    job_id_104 = _extract_104_job_id(url)
+    if job_id_104:
+        api_url = f"https://www.104.com.tw/job/ajax/content/{job_id_104}"
+        headers = {
+            "User-Agent": (
+                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            ),
+            "Referer": "https://www.104.com.tw/",
+            "Accept": "application/json",
+        }
+        try:
+            req = Request(api_url, headers=headers)
+            with urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+            job_detail = data.get("data", {}).get("jobDetail", {})
+            desc_html = job_detail.get("jobDescription", "")
+            if desc_html:
+                return _strip_html(desc_html)[:3000]
+        except Exception:
+            pass
+
+    # Generic fallback: fetch URL and extract text
+    try:
+        req = Request(
+            url,
+            headers={
+                "User-Agent": (
+                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+                )
+            },
+        )
+        with urlopen(req, timeout=15) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+        return _strip_html(html)[:3000]
+    except Exception:
+        return ""
+
+
 # ── Claude Haiku parsing ───────────────────────────────────────────────────────
 
 def parse_company_culture_sync(company: str, snippets: list[str]) -> dict:

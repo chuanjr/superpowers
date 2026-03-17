@@ -157,6 +157,12 @@ def init_db(path: Path = DB_PATH) -> None:
         )
     """)
     conn.commit()
+    # Migrations for columns added after initial schema
+    try:
+        conn.execute("ALTER TABLE candidate_culture ADD COLUMN sort_order INTEGER")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
     conn.close()
 
 
@@ -310,6 +316,12 @@ def get_all_jobs_with_embeddings() -> list[dict]:
 def update_job_embedding(job_id: str, embedding_json: str) -> None:
     with _conn() as conn:
         conn.execute("UPDATE jobs SET embedding = ? WHERE id = ?", (embedding_json, job_id))
+        conn.commit()
+
+
+def update_job_description(job_id: str, description: str) -> None:
+    with _conn() as conn:
+        conn.execute("UPDATE jobs SET description = ? WHERE id = ?", (description, job_id))
         conn.commit()
 
 
@@ -521,9 +533,11 @@ def get_culture() -> Optional[dict]:
 
 
 def get_all_culture() -> list[dict]:
-    """Return all culture entries ordered oldest-first."""
+    """Return all culture entries ordered by sort_order then id."""
     with _conn() as conn:
-        rows = conn.execute("SELECT * FROM candidate_culture ORDER BY id ASC").fetchall()
+        rows = conn.execute(
+            "SELECT * FROM candidate_culture ORDER BY COALESCE(sort_order, id) ASC"
+        ).fetchall()
     return [dict(r) for r in rows]
 
 
@@ -531,6 +545,32 @@ def get_culture_raw_text_merged() -> str:
     """Concatenate all culture raw_text entries for use in AI prompts."""
     rows = get_all_culture()
     return "\n\n---\n\n".join(r["raw_text"] for r in rows)
+
+
+def update_culture_entry(culture_id: int, raw_text: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE candidate_culture SET raw_text = ?, parsed_json = NULL, updated_at = ? WHERE id = ?",
+            (raw_text, now, culture_id),
+        )
+        conn.commit()
+
+
+def delete_culture_entry(culture_id: int) -> None:
+    with _conn() as conn:
+        conn.execute("DELETE FROM candidate_culture WHERE id = ?", (culture_id,))
+        conn.commit()
+
+
+def reorder_culture_entries(ordered_ids: list) -> None:
+    """Set sort_order for each entry according to the given id order."""
+    with _conn() as conn:
+        for i, cid in enumerate(ordered_ids):
+            conn.execute(
+                "UPDATE candidate_culture SET sort_order = ? WHERE id = ?", (i, cid)
+            )
+        conn.commit()
 
 
 # ── Candidate stories ──────────────────────────────────────────────────────────

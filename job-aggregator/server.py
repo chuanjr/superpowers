@@ -458,6 +458,121 @@ def get_culture_endpoint() -> JSONResponse:
     })
 
 
+@app.patch("/api/candidate/culture/{culture_id}")
+async def update_culture_entry(culture_id: int, body: dict, background_tasks: BackgroundTasks) -> JSONResponse:
+    """Edit a culture entry's raw text and re-parse it."""
+    raw_text = (body.get("raw_text") or "").strip()
+    if not raw_text:
+        raise HTTPException(400, "raw_text required")
+    from store import update_culture_entry as _update, update_culture_parsed
+    _update(culture_id, raw_text)
+
+    async def _reparse():
+        from application_generator import parse_culture_sync
+        from store import update_culture_parsed as _upd
+        try:
+            parsed = parse_culture_sync(raw_text)
+            import json as _json
+            _upd(culture_id, _json.dumps(parsed))
+        except Exception:
+            pass
+
+    background_tasks.add_task(_reparse)
+    return JSONResponse({"ok": True})
+
+
+@app.delete("/api/candidate/culture/{culture_id}")
+def delete_culture_entry(culture_id: int) -> JSONResponse:
+    from store import delete_culture_entry as _del
+    _del(culture_id)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/candidate/culture/reorder")
+def reorder_culture_entries(body: dict) -> JSONResponse:
+    ordered_ids = body.get("ordered_ids") or []
+    if not ordered_ids:
+        raise HTTPException(400, "ordered_ids required")
+    from store import reorder_culture_entries as _reorder
+    _reorder(ordered_ids)
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/pipeline/{job_id}/culture-check")
+async def pipeline_culture_check(job_id: str, background_tasks: BackgroundTasks) -> JSONResponse:
+    """Run culture scoring for a pipeline job without generating the full package."""
+    import json as _json
+    from store import get_job, get_latest_resume, get_all_culture, upsert_application_package
+
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    resume = get_latest_resume()
+    if not resume:
+        raise HTTPException(404, "No resume found")
+    culture_rows = get_all_culture()
+    if not culture_rows:
+        raise HTTPException(400, "No culture entries found — add culture DNA first")
+
+    async def _run():
+        from application_generator import score_culture_sync
+        merged_dna: dict = {}
+        for row in culture_rows:
+            if row.get("parsed_json"):
+                try:
+                    d = _json.loads(row["parsed_json"])
+                    if d and not d.get("error"):
+                        for key in ("likes", "dislikes", "green_signals", "red_signals"):
+                            merged_dna[key] = list(dict.fromkeys(
+                                merged_dna.get(key, []) + d.get(key, [])
+                            ))
+                        if d.get("summary"):
+                            merged_dna["summary"] = d["summary"]
+                except Exception:
+                    pass
+        if not merged_dna:
+            return
+
+        jd_text = job.get("description") or ""
+        if not jd_text.strip() and job.get("url"):
+            try:
+                from company_research import fetch_jd_from_url
+                from store import update_job_description as _upd_jd
+                fetched = await asyncio.to_thread(fetch_jd_from_url, job["url"])
+                if fetched:
+                    jd_text = fetched
+                    _upd_jd(job_id, fetched)
+            except Exception:
+                pass
+
+        company_culture = None
+        try:
+            from company_research import get_or_research_company
+            company_culture = await asyncio.to_thread(
+                get_or_research_company, job.get("company") or "", job.get("url") or ""
+            )
+        except Exception:
+            pass
+
+        try:
+            signals = await asyncio.to_thread(
+                score_culture_sync, merged_dna,
+                job.get("title") or "", job.get("company") or "",
+                jd_text, company_culture,
+            )
+            upsert_application_package(
+                job_id, resume["id"],
+                culture_score=signals.get("score"),
+                culture_signals=_json.dumps(signals),
+                status="done",
+            )
+        except Exception:
+            pass
+
+    background_tasks.add_task(_run)
+    return JSONResponse({"ok": True, "status": "started"})
+
+
 # ── Candidate stories endpoints ────────────────────────────────────────────────
 
 @app.post("/api/candidate/stories")
@@ -859,6 +974,19 @@ async def generate_review_summary(job_id: str, background_tasks: BackgroundTasks
             culture_rows = get_all_culture()
             culture_dna = _build_culture_dna_from_rows(culture_rows)
 
+            # Auto-fetch JD if description is empty
+            job_description = job.get("description") or ""
+            if not job_description.strip() and job.get("url"):
+                try:
+                    from company_research import fetch_jd_from_url
+                    from store import update_job_description as _update_jd
+                    fetched = await asyncio.to_thread(fetch_jd_from_url, job["url"])
+                    if fetched:
+                        job_description = fetched
+                        _update_jd(job_id, fetched)
+                except Exception:
+                    pass
+
             # Fetch company culture profile (cached)
             company_culture = None
             try:
@@ -872,7 +1000,7 @@ async def generate_review_summary(job_id: str, background_tasks: BackgroundTasks
 
             summary = await asyncio.to_thread(
                 generate_triage_summary_sync,
-                resume_summary, job.get("description") or "",
+                resume_summary, job_description,
                 job.get("title") or "", job.get("company") or "",
                 culture_dna, explanation, company_culture,
             )

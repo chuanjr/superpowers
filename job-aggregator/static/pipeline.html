@@ -346,7 +346,7 @@
   .btn-co-profile:hover { opacity: 1; }
 
   /* ── Action buttons in table ── */
-  .btn-pkg, .btn-coach-job {
+  .btn-pkg, .btn-coach-job, .btn-culture-check {
     background: none;
     border: 1.5px solid #e5e7eb;
     border-radius: 6px;
@@ -356,8 +356,10 @@
     transition: border-color .12s, background .12s;
     color: #374151;
   }
-  .btn-pkg:hover      { border-color: #818cf8; background: #f0f0ff; }
-  .btn-coach-job:hover { border-color: #34d399; background: #f0fdf4; }
+  .btn-pkg:hover         { border-color: #818cf8; background: #f0f0ff; }
+  .btn-coach-job:hover   { border-color: #34d399; background: #f0fdf4; }
+  .btn-culture-check:hover { border-color: #f59e0b; background: #fffbeb; }
+  .btn-culture-check.running { opacity: 0.5; cursor: default; }
 
   /* ── Right drawer ── */
   .drawer-overlay {
@@ -576,6 +578,7 @@
 <body>
 
 <a href="/jobs" class="back-link">← Job Board</a>
+<a href="/review" class="back-link" style="margin-left:12px">👀 Review Queue</a>
 
 <div class="page-header">
   <div>
@@ -665,11 +668,19 @@
 
 <!-- ── Culture DNA Modal ── -->
 <div class="modal-overlay hidden" id="culture-modal">
-  <div class="modal" style="width:500px;max-width:95vw">
+  <div class="modal" style="width:560px;max-width:95vw">
     <h3>⚙ Culture DNA</h3>
-    <p style="font-size:0.82rem;color:#6b7280;margin-bottom:16px">Paste your culture discussion (values, likes/dislikes, ideal workplace). You can add multiple entries — they'll all be merged when scoring jobs.</p>
-    <div class="culture-entries-list" id="culture-entries-list" style="max-height:200px;overflow-y:auto"></div>
-    <textarea id="culture-text-input" class="pkg-textarea" rows="5" placeholder="Paste culture discussion here…"></textarea>
+    <p style="font-size:0.82rem;color:#6b7280;margin-bottom:16px">Paste your culture discussion (values, likes/dislikes, ideal workplace). Drag ↕ to reorder priority — top entries carry most weight.</p>
+    <div class="culture-entries-list" id="culture-entries-list" style="max-height:280px;overflow-y:auto;margin-bottom:12px"></div>
+    <div id="culture-edit-area" style="display:none;background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:12px">
+      <div style="font-size:0.78rem;color:#6b7280;margin-bottom:6px">Editing entry</div>
+      <textarea id="culture-edit-input" class="pkg-textarea" rows="4" style="margin-bottom:8px"></textarea>
+      <div style="display:flex;gap:8px">
+        <button class="btn-cancel" id="culture-edit-cancel" style="font-size:0.8rem;padding:5px 12px">Cancel</button>
+        <button class="btn-confirm" id="culture-edit-save" style="font-size:0.8rem;padding:5px 12px">Save Changes</button>
+      </div>
+    </div>
+    <textarea id="culture-text-input" class="pkg-textarea" rows="4" placeholder="Paste culture discussion here…"></textarea>
     <div class="modal-btns" style="margin-top:12px">
       <button class="btn-cancel" id="culture-modal-close">Close</button>
       <button class="btn-confirm" id="culture-modal-save">+ Add Entry</button>
@@ -1014,6 +1025,7 @@
     <div style="display:flex;align-items:center;gap:4px;flex-wrap:nowrap">
       <button class="btn-pkg" data-action="open-pkg" data-job-id="${escHtml(e.job_id)}" title="Application Package">📋</button>
       <button class="btn-coach-job" data-action="open-coach" data-job-id="${escHtml(e.job_id)}" title="Job Coach">💬</button>
+      <button class="btn-culture-check" data-action="culture-check" data-job-id="${escHtml(e.job_id)}" title="Check Culture Fit">🎭</button>
       <div class="feedback-btns">
         <button class="btn-feedback${e._fb === 'up' ? ' up' : ''}" data-action="feedback-up" data-job-id="${escHtml(e.job_id)}" title="Score too low">👍</button>
         <button class="btn-feedback${e._fb === 'down' ? ' down' : ''}" data-action="feedback-down" data-job-id="${escHtml(e.job_id)}" title="Score too high">👎</button>
@@ -1164,27 +1176,108 @@
 
   // ── Culture DNA Modal ──────────────────────────────────────
 
+  let _cultureEditId = null;
+  let _cultureEntries = [];  // cached for drag-reorder
+
   async function loadCultureEntries() {
     const data = await fetch('/api/candidate/culture').then(r => r.json());
+    _cultureEntries = data.entries || [];
     const list = document.getElementById('culture-entries-list');
-    if (!data.entries || !data.entries.length) {
+    if (!_cultureEntries.length) {
       list.innerHTML = '<div style="font-size:0.8rem;color:#9ca3af">No culture entries yet.</div>';
       return;
     }
-    list.innerHTML = data.entries.map((entry, i) => {
-      const excerpt = (entry.raw_text || '').slice(0, 120).replace(/\n/g, ' ');
-      const date = entry.updated_at ? new Date(entry.updated_at).toLocaleDateString() : '';
+    list.innerHTML = _cultureEntries.map((entry, i) => {
+      const excerpt = (entry.raw_text || '').slice(0, 100).replace(/\n/g, ' ');
       const parsed = entry.parsed || {};
       const summary = parsed.summary || '';
-      return `<div class="culture-entry-item">
-        <div class="culture-entry-excerpt">
-          <div>${escHtml(excerpt)}${entry.raw_text.length > 120 ? '…' : ''}</div>
-          ${summary ? `<div class="culture-entry-meta">${escHtml(summary.slice(0,80))}</div>` : ''}
+      return `<div class="culture-entry-item" data-culture-id="${entry.culture_id}" draggable="true"
+        style="display:flex;align-items:flex-start;gap:8px;padding:8px;border:1.5px solid #e5e7eb;border-radius:7px;margin-bottom:6px;background:#fff;cursor:grab">
+        <span style="font-size:1rem;color:#9ca3af;cursor:grab;padding-top:2px" title="Drag to reorder">↕</span>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:0.8rem;color:#374151">${escHtml(excerpt)}${entry.raw_text.length > 100 ? '…' : ''}</div>
+          ${summary ? `<div style="font-size:0.72rem;color:#6b7280;margin-top:2px">${escHtml(summary.slice(0,90))}</div>` : '<div style="font-size:0.72rem;color:#9ca3af;margin-top:2px">Parsing…</div>'}
         </div>
-        <div style="font-size:0.7rem;color:#9ca3af;white-space:nowrap">${date}</div>
+        <div style="display:flex;gap:4px;flex-shrink:0">
+          <button data-action="culture-edit" data-culture-id="${entry.culture_id}"
+            style="font-size:0.72rem;padding:2px 8px;border:1.5px solid #e5e7eb;border-radius:5px;background:#fff;cursor:pointer">Edit</button>
+          <button data-action="culture-delete" data-culture-id="${entry.culture_id}"
+            style="font-size:0.72rem;padding:2px 8px;border:1.5px solid #fecaca;border-radius:5px;background:#fff;color:#dc2626;cursor:pointer">✕</button>
+        </div>
       </div>`;
     }).join('');
+
+    // Drag-to-reorder
+    let dragSrcId = null;
+    list.querySelectorAll('[draggable]').forEach(el => {
+      el.addEventListener('dragstart', () => { dragSrcId = el.dataset.cultureId; el.style.opacity = '0.4'; });
+      el.addEventListener('dragend', () => { el.style.opacity = '1'; });
+      el.addEventListener('dragover', e => { e.preventDefault(); });
+      el.addEventListener('drop', async e => {
+        e.preventDefault();
+        if (!dragSrcId || dragSrcId === el.dataset.cultureId) return;
+        // Reorder _cultureEntries
+        const fromIdx = _cultureEntries.findIndex(c => String(c.culture_id) === dragSrcId);
+        const toIdx   = _cultureEntries.findIndex(c => String(c.culture_id) === el.dataset.cultureId);
+        if (fromIdx < 0 || toIdx < 0) return;
+        const [moved] = _cultureEntries.splice(fromIdx, 1);
+        _cultureEntries.splice(toIdx, 0, moved);
+        await fetch('/api/candidate/culture/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ordered_ids: _cultureEntries.map(c => c.culture_id) }),
+        });
+        await loadCultureEntries();
+      });
+    });
+
+    // Edit / delete buttons
+    list.querySelectorAll('[data-action="culture-edit"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cid = Number(btn.dataset.cultureId);
+        const entry = _cultureEntries.find(c => c.culture_id === cid);
+        if (!entry) return;
+        _cultureEditId = cid;
+        document.getElementById('culture-edit-input').value = entry.raw_text;
+        document.getElementById('culture-edit-area').style.display = 'block';
+        document.getElementById('culture-text-input').style.display = 'none';
+        document.getElementById('culture-modal-save').style.display = 'none';
+      });
+    });
+
+    list.querySelectorAll('[data-action="culture-delete"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this culture entry?')) return;
+        await fetch(`/api/candidate/culture/${btn.dataset.cultureId}`, { method: 'DELETE' });
+        await loadCultureEntries();
+      });
+    });
   }
+
+  document.getElementById('culture-edit-cancel').addEventListener('click', () => {
+    document.getElementById('culture-edit-area').style.display = 'none';
+    document.getElementById('culture-text-input').style.display = '';
+    document.getElementById('culture-modal-save').style.display = '';
+    _cultureEditId = null;
+  });
+
+  document.getElementById('culture-edit-save').addEventListener('click', async () => {
+    const text = document.getElementById('culture-edit-input').value.trim();
+    if (!text || !_cultureEditId) return;
+    const btn = document.getElementById('culture-edit-save');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    await fetch(`/api/candidate/culture/${_cultureEditId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw_text: text }),
+    });
+    btn.disabled = false; btn.textContent = 'Save Changes';
+    document.getElementById('culture-edit-area').style.display = 'none';
+    document.getElementById('culture-text-input').style.display = '';
+    document.getElementById('culture-modal-save').style.display = '';
+    _cultureEditId = null;
+    await loadCultureEntries();
+  });
 
   document.getElementById('btn-culture-dna').addEventListener('click', async () => {
     document.getElementById('culture-modal').classList.remove('hidden');
@@ -1579,6 +1672,51 @@
 
     const coachBtn = e.target.closest('[data-action="open-coach"]');
     if (coachBtn) { openCoachDrawer(coachBtn.dataset.jobId); return; }
+
+    const cultureBtn = e.target.closest('[data-action="culture-check"]');
+    if (cultureBtn) {
+      const jobId = cultureBtn.dataset.jobId;
+      if (cultureBtn.classList.contains('running')) return;
+      cultureBtn.classList.add('running');
+      cultureBtn.title = 'Checking…';
+      try {
+        const res = await fetch(`/api/pipeline/${encodeURIComponent(jobId)}/culture-check`, { method: 'POST' });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          alert(err.detail || 'Culture check failed');
+          cultureBtn.classList.remove('running');
+          cultureBtn.title = 'Check Culture Fit';
+          return;
+        }
+        // Poll for result (culture score gets written to application_packages)
+        let tries = 0;
+        const poll = setInterval(async () => {
+          tries++;
+          const data = await fetch('/api/pipeline').then(r => r.json()).catch(() => null);
+          if (data && data.entries) {
+            const entry = data.entries.find(en => en.job_id === jobId);
+            if (entry && entry.culture_score != null) {
+              clearInterval(poll);
+              cultureBtn.classList.remove('running');
+              cultureBtn.title = 'Check Culture Fit';
+              // Update local data and re-render
+              const local = ALL_ENTRIES.find(en => en.job_id === jobId);
+              if (local) local.culture_score = entry.culture_score;
+              renderTable();
+            }
+          }
+          if (tries >= 20) {
+            clearInterval(poll);
+            cultureBtn.classList.remove('running');
+            cultureBtn.title = 'Check Culture Fit';
+          }
+        }, 2000);
+      } catch (err) {
+        cultureBtn.classList.remove('running');
+        cultureBtn.title = 'Check Culture Fit';
+      }
+      return;
+    }
   }, true);  // capture phase so it fires before the existing click handler
 
   load();
