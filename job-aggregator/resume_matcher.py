@@ -14,7 +14,8 @@ import math
 import os
 
 import pdfplumber
-import google.generativeai as genai
+from google import genai
+from google.genai import types as genai_types
 import anthropic
 
 from store import (
@@ -31,11 +32,11 @@ _EMBED_MODEL = "models/gemini-embedding-001"
 _TOP_N_EXPLAIN = 30
 
 
-def _get_gemini():
+def _get_gemini() -> genai.Client:
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:
         raise RuntimeError("GEMINI_API_KEY environment variable is not set")
-    genai.configure(api_key=api_key)
+    return genai.Client(api_key=api_key)
 
 
 def _get_claude():
@@ -85,14 +86,14 @@ Résumé text:
 
 
 def _embed_sync(text: str, task_type: str) -> list[float]:
-    """Get Gemini text-embedding-004 vector."""
-    _get_gemini()
-    result = genai.embed_content(
+    """Get Gemini embedding vector."""
+    client = _get_gemini()
+    result = client.models.embed_content(
         model=_EMBED_MODEL,
-        content=text[:3000],  # model max ~2048 tokens
-        task_type=task_type,
+        contents=text[:3000],
+        config=genai_types.EmbedContentConfig(task_type=task_type),
     )
-    return result["embedding"]
+    return result.embeddings[0].values
 
 
 def _explain_sync(resume_summary: str, job: dict, candidate_industries: list[str] | None = None,
