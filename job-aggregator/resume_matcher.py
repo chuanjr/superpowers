@@ -27,7 +27,7 @@ from store import (
     add_to_pipeline,
 )
 
-_EMBED_MODEL = "models/text-embedding-004"
+_EMBED_MODEL = "models/gemini-embedding-001"
 _TOP_N_EXPLAIN = 30
 
 

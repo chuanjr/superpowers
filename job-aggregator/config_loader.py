@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Union
 import yaml
 
 
@@ -9,7 +10,7 @@ class ConfigError(Exception):
     pass
 
 
-def load_config(path: Path | str = "config.yaml") -> dict:
+def load_config(path: Union[Path, str] = "config.yaml") -> dict:
     path = Path(path)
     if not path.exists():
         raise ConfigError(f"Config file not found: {path}")
