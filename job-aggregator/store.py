@@ -101,6 +101,43 @@ def init_db(path: Path = DB_PATH) -> None:
             created_at  TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS candidate_culture (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            raw_text    TEXT NOT NULL,
+            parsed_json TEXT,
+            created_at  TEXT NOT NULL,
+            updated_at  TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS candidate_stories (
+            id              TEXT PRIMARY KEY,
+            title           TEXT NOT NULL,
+            primary_skill   TEXT,
+            secondary_skill TEXT,
+            strength        INTEGER,
+            detail          TEXT,
+            created_at      TEXT NOT NULL
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS application_packages (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_id          TEXT NOT NULL REFERENCES jobs(id),
+            resume_id       INTEGER REFERENCES resumes(id),
+            culture_score   INTEGER,
+            culture_signals TEXT,
+            job_translation TEXT,
+            story_matches   TEXT,
+            ats_gap         TEXT,
+            why_company     TEXT,
+            value_prop      TEXT,
+            status          TEXT NOT NULL DEFAULT 'pending',
+            created_at      TEXT NOT NULL,
+            UNIQUE(job_id, resume_id)
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -337,11 +374,14 @@ def get_pipeline() -> list[dict]:
                 p.id, p.job_id, p.resume_id, p.status, p.verdict, p.notes,
                 p.added_at, p.reviewed_at,
                 j.title, j.company, j.location, j.market, j.url, j.logo_url, j.sources,
-                rjm.score, rjm.similarity, rjm.explanation
+                rjm.score, rjm.similarity, rjm.explanation,
+                ap.culture_score, ap.status AS pkg_status
             FROM pipeline p
             JOIN jobs j ON j.id = p.job_id
             LEFT JOIN resume_job_matches rjm ON rjm.job_id = p.job_id
                 AND rjm.resume_id = p.resume_id
+            LEFT JOIN application_packages ap ON ap.job_id = p.job_id
+                AND ap.resume_id = p.resume_id
             ORDER BY COALESCE(rjm.score, CAST(rjm.similarity * 100 AS INTEGER)) DESC NULLS LAST
         """).fetchall()
     result = []
@@ -428,3 +468,118 @@ def get_feedback_for_job(job_id: str, resume_id: Optional[int] = None) -> list[d
                 (job_id,),
             ).fetchall()
     return [dict(r) for r in rows]
+
+
+# ── Candidate culture ──────────────────────────────────────────────────────────
+
+def upsert_culture(raw_text: str, parsed_json: Optional[str] = None) -> int:
+    """Insert or replace the single culture record. Returns its id."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        existing = conn.execute("SELECT id FROM candidate_culture ORDER BY id DESC LIMIT 1").fetchone()
+        if existing:
+            conn.execute(
+                "UPDATE candidate_culture SET raw_text = ?, parsed_json = COALESCE(?, parsed_json), updated_at = ? WHERE id = ?",
+                (raw_text, parsed_json, now, existing["id"]),
+            )
+            conn.commit()
+            return existing["id"]
+        else:
+            cur = conn.execute(
+                "INSERT INTO candidate_culture (raw_text, parsed_json, created_at, updated_at) VALUES (?, ?, ?, ?)",
+                (raw_text, parsed_json, now, now),
+            )
+            conn.commit()
+            return cur.lastrowid
+
+
+def update_culture_parsed(culture_id: int, parsed_json: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        conn.execute(
+            "UPDATE candidate_culture SET parsed_json = ?, updated_at = ? WHERE id = ?",
+            (parsed_json, now, culture_id),
+        )
+        conn.commit()
+
+
+def get_culture() -> Optional[dict]:
+    with _conn() as conn:
+        row = conn.execute("SELECT * FROM candidate_culture ORDER BY id DESC LIMIT 1").fetchone()
+    return dict(row) if row else None
+
+
+# ── Candidate stories ──────────────────────────────────────────────────────────
+
+def upsert_stories(stories: list[dict]) -> None:
+    """Bulk upsert STAR stories."""
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        for s in stories:
+            conn.execute("""
+                INSERT INTO candidate_stories (id, title, primary_skill, secondary_skill, strength, detail, created_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    title           = excluded.title,
+                    primary_skill   = excluded.primary_skill,
+                    secondary_skill = excluded.secondary_skill,
+                    strength        = excluded.strength,
+                    detail          = excluded.detail
+            """, (
+                s.get("id"), s.get("title"), s.get("primary_skill"),
+                s.get("secondary_skill"), s.get("strength"), s.get("detail"), now,
+            ))
+        conn.commit()
+
+
+def get_stories() -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute("SELECT * FROM candidate_stories ORDER BY id").fetchall()
+    return [dict(r) for r in rows]
+
+
+# ── Application packages ───────────────────────────────────────────────────────
+
+def get_application_package(job_id: str, resume_id: int) -> Optional[dict]:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM application_packages WHERE job_id = ? AND resume_id = ?",
+            (job_id, resume_id),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_application_package(job_id: str, resume_id: int, **fields) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    allowed = {"culture_score", "culture_signals", "job_translation",
+               "story_matches", "ats_gap", "why_company", "value_prop", "status"}
+    cols = {k: v for k, v in fields.items() if k in allowed}
+
+    with _conn() as conn:
+        existing = conn.execute(
+            "SELECT id FROM application_packages WHERE job_id = ? AND resume_id = ?",
+            (job_id, resume_id),
+        ).fetchone()
+        if existing:
+            if cols:
+                set_clause = ", ".join(f"{k} = ?" for k in cols)
+                values = list(cols.values()) + [job_id, resume_id]
+                conn.execute(
+                    f"UPDATE application_packages SET {set_clause} WHERE job_id = ? AND resume_id = ?",
+                    values,
+                )
+        else:
+            col_names = ["job_id", "resume_id", "status", "created_at"] + list(cols.keys())
+            placeholders = ", ".join("?" for _ in col_names)
+            values = [job_id, resume_id, cols.get("status", "pending"), now] + [
+                cols[k] for k in cols if k != "status"
+            ]
+            # Rebuild properly
+            col_names = ["job_id", "resume_id", "created_at"] + list(cols.keys())
+            placeholders = ", ".join("?" for _ in col_names)
+            values = [job_id, resume_id, now] + list(cols.values())
+            conn.execute(
+                f"INSERT INTO application_packages ({', '.join(col_names)}) VALUES ({placeholders})",
+                values,
+            )
+        conn.commit()

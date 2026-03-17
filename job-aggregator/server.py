@@ -346,6 +346,217 @@ async def submit_feedback(background_tasks: BackgroundTasks, body: dict) -> JSON
     return JSONResponse({"ok": True})
 
 
+# ── Candidate culture endpoints ────────────────────────────────────────────────
+
+@app.post("/api/candidate/culture")
+async def save_culture(background_tasks: BackgroundTasks, body: dict) -> JSONResponse:
+    """Save culture discussion text. Claude parses it in the background."""
+    raw_text = (body.get("raw_text") or "").strip()
+    if not raw_text:
+        raise HTTPException(400, "raw_text required")
+
+    from store import upsert_culture, update_culture_parsed
+    from application_generator import parse_culture_sync
+
+    culture_id = upsert_culture(raw_text)
+
+    async def _parse():
+        try:
+            parsed = await asyncio.to_thread(parse_culture_sync, raw_text)
+            update_culture_parsed(culture_id, json.dumps(parsed))
+        except Exception as exc:
+            update_culture_parsed(culture_id, json.dumps({"error": str(exc)}))
+
+    import asyncio, json
+    background_tasks.add_task(_parse)
+    return JSONResponse({"ok": True, "culture_id": culture_id})
+
+
+@app.get("/api/candidate/culture")
+def get_culture_endpoint() -> JSONResponse:
+    from store import get_culture
+    row = get_culture()
+    if not row:
+        return JSONResponse({"status": "none"})
+    import json
+    parsed = {}
+    if row.get("parsed_json"):
+        try:
+            parsed = json.loads(row["parsed_json"])
+        except Exception:
+            pass
+    return JSONResponse({
+        "status": "ok",
+        "culture_id": row["id"],
+        "raw_text": row["raw_text"],
+        "parsed": parsed,
+        "updated_at": row.get("updated_at"),
+    })
+
+
+# ── Candidate stories endpoints ────────────────────────────────────────────────
+
+@app.post("/api/candidate/stories")
+def save_stories(body: dict) -> JSONResponse:
+    """Bulk import STAR stories."""
+    stories = body.get("stories") or []
+    if not stories:
+        raise HTTPException(400, "stories array required")
+    from store import upsert_stories
+    upsert_stories(stories)
+    return JSONResponse({"ok": True, "count": len(stories)})
+
+
+@app.get("/api/candidate/stories")
+def list_stories() -> JSONResponse:
+    from store import get_stories
+    return JSONResponse({"stories": get_stories()})
+
+
+# ── Application package endpoints ───────────────────────────────────────────────
+
+_pkg_tasks: dict = {}  # job_id -> {"running": bool, "error": str|None}
+
+
+@app.get("/api/pipeline/{job_id}/package")
+def get_package(job_id: str) -> JSONResponse:
+    import json
+    resume = get_latest_resume()
+    if not resume:
+        return JSONResponse({"status": "no_resume"})
+    from store import get_application_package
+    pkg = get_application_package(job_id, resume["id"])
+    if not pkg:
+        task_state = _pkg_tasks.get(job_id, {})
+        if task_state.get("running"):
+            return JSONResponse({"status": "processing"})
+        return JSONResponse({"status": "none"})
+
+    def _parse(key):
+        val = pkg.get(key)
+        if val and isinstance(val, str):
+            try:
+                return json.loads(val)
+            except Exception:
+                return val
+        return val
+
+    return JSONResponse({
+        "status":          pkg.get("status", "done"),
+        "job_translation": pkg.get("job_translation"),
+        "culture_score":   pkg.get("culture_score"),
+        "culture_signals": _parse("culture_signals"),
+        "story_matches":   _parse("story_matches"),
+        "ats_gap":         _parse("ats_gap"),
+        "why_company":     pkg.get("why_company"),
+        "value_prop":      pkg.get("value_prop"),
+        "created_at":      pkg.get("created_at"),
+    })
+
+
+@app.post("/api/pipeline/{job_id}/package")
+async def generate_package_endpoint(job_id: str, background_tasks: BackgroundTasks) -> JSONResponse:
+    """Trigger application package generation for a pipeline job."""
+    resume = get_latest_resume()
+    if not resume:
+        raise HTTPException(404, "No resume found")
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    if _pkg_tasks.get(job_id, {}).get("running"):
+        return JSONResponse({"status": "already_running"})
+
+    _pkg_tasks[job_id] = {"running": True, "error": None}
+
+    async def _run():
+        from application_generator import generate_package
+        try:
+            await generate_package(job_id, resume["id"], job, resume)
+        except Exception as exc:
+            _pkg_tasks[job_id]["error"] = str(exc)
+        finally:
+            _pkg_tasks[job_id]["running"] = False
+
+    background_tasks.add_task(_run)
+    return JSONResponse({"status": "started"})
+
+
+@app.get("/api/pipeline/{job_id}/package.txt")
+def download_package(job_id: str):
+    import json
+    from fastapi.responses import PlainTextResponse
+    resume = get_latest_resume()
+    if not resume:
+        raise HTTPException(404, "No resume found")
+    from store import get_application_package
+    pkg = get_application_package(job_id, resume["id"])
+    if not pkg:
+        raise HTTPException(404, "Package not generated yet")
+
+    job = get_job(job_id)
+    job_title = (job or {}).get("title", "")
+    company   = (job or {}).get("company", "")
+
+    def _parse(key):
+        val = pkg.get(key)
+        if val and isinstance(val, str):
+            try:
+                return json.loads(val)
+            except Exception:
+                return val
+        return val
+
+    lines = [
+        f"APPLICATION PACKAGE — {job_title} at {company}",
+        "=" * 60,
+        "",
+    ]
+
+    if pkg.get("job_translation"):
+        lines += ["## WHAT THIS ROLE ACTUALLY IS", pkg["job_translation"], ""]
+
+    culture_signals = _parse("culture_signals")
+    if culture_signals:
+        score = pkg.get("culture_score") or culture_signals.get("score", "?")
+        verdict = culture_signals.get("verdict", "")
+        lines += [f"## CULTURE FIT  [{score}/100]", verdict]
+        if culture_signals.get("green"):
+            lines += ["Green signals: " + " | ".join(culture_signals["green"])]
+        if culture_signals.get("red"):
+            lines += ["Red signals: " + " | ".join(culture_signals["red"])]
+        lines += [""]
+
+    story_matches = _parse("story_matches")
+    if story_matches:
+        lines += ["## TAILORED RESUME BULLETS"]
+        for s in story_matches:
+            lines += [f"[{s.get('story_id','')}] {s.get('competency','')}", f"• {s.get('bullet','')}", ""]
+
+    ats_gap = _parse("ats_gap")
+    if ats_gap:
+        score = ats_gap.get("score", "?")
+        lines += [f"## ATS KEYWORDS  [{score}% coverage]"]
+        if ats_gap.get("present"):
+            lines += ["Present: " + ", ".join(ats_gap["present"])]
+        if ats_gap.get("missing"):
+            lines += ["Missing (add to resume): " + ", ".join(ats_gap["missing"])]
+        lines += [""]
+
+    if pkg.get("why_company"):
+        lines += ["## WHY THIS COMPANY", pkg["why_company"], ""]
+
+    if pkg.get("value_prop"):
+        lines += ["## VALUE PROPOSITION / COVER LETTER", pkg["value_prop"], ""]
+
+    content = "\n".join(lines)
+    filename = f"{company}_{job_title}_package.txt".replace(" ", "_").replace("/", "-")
+    return PlainTextResponse(
+        content,
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
 # ── Static / SPA ───────────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
