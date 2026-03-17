@@ -464,7 +464,7 @@ async def update_culture_entry(culture_id: int, body: dict, background_tasks: Ba
     raw_text = (body.get("raw_text") or "").strip()
     if not raw_text:
         raise HTTPException(400, "raw_text required")
-    from store import update_culture_entry as _update, update_culture_parsed
+    from store import update_culture_entry as _update
     _update(culture_id, raw_text)
 
     async def _reparse():
@@ -510,40 +510,17 @@ async def pipeline_culture_check(job_id: str, background_tasks: BackgroundTasks)
     resume = get_latest_resume()
     if not resume:
         raise HTTPException(404, "No resume found")
-    culture_rows = get_all_culture()
-    if not culture_rows:
+    if not get_all_culture():
         raise HTTPException(400, "No culture entries found — add culture DNA first")
 
     async def _run():
         from application_generator import score_culture_sync
-        merged_dna: dict = {}
-        for row in culture_rows:
-            if row.get("parsed_json"):
-                try:
-                    d = _json.loads(row["parsed_json"])
-                    if d and not d.get("error"):
-                        for key in ("likes", "dislikes", "green_signals", "red_signals"):
-                            merged_dna[key] = list(dict.fromkeys(
-                                merged_dna.get(key, []) + d.get(key, [])
-                            ))
-                        if d.get("summary"):
-                            merged_dna["summary"] = d["summary"]
-                except Exception:
-                    pass
+        fresh_culture_rows = get_all_culture()
+        merged_dna = _build_culture_dna_from_rows(fresh_culture_rows)
         if not merged_dna:
             return
 
-        jd_text = job.get("description") or ""
-        if not jd_text.strip() and job.get("url"):
-            try:
-                from company_research import fetch_jd_from_url
-                from store import update_job_description as _upd_jd
-                fetched = await asyncio.to_thread(fetch_jd_from_url, job["url"])
-                if fetched:
-                    jd_text = fetched
-                    _upd_jd(job_id, fetched)
-            except Exception:
-                pass
+        jd_text = await _ensure_job_description(job_id, job)
 
         company_culture = None
         try:
@@ -890,6 +867,22 @@ async def import_stories_from_file(body: dict) -> JSONResponse:
 
 # ── Review queue (triage) endpoints ──────────────────────────────────────────
 
+async def _ensure_job_description(job_id: str, job: dict) -> str:
+    """Return job description, auto-fetching from URL and saving to DB if empty."""
+    desc = job.get("description") or ""
+    if not desc.strip() and job.get("url"):
+        try:
+            from company_research import fetch_jd_from_url
+            from store import update_job_description as _update_jd
+            fetched = await asyncio.to_thread(fetch_jd_from_url, job["url"])
+            if fetched:
+                _update_jd(job_id, fetched)
+                return fetched
+        except Exception:
+            pass
+    return desc
+
+
 def _build_culture_dna_from_rows(culture_rows: list) -> dict | None:
     """Merge all culture entries into a single DNA dict."""
     import json as _json
@@ -975,17 +968,7 @@ async def generate_review_summary(job_id: str, background_tasks: BackgroundTasks
             culture_dna = _build_culture_dna_from_rows(culture_rows)
 
             # Auto-fetch JD if description is empty
-            job_description = job.get("description") or ""
-            if not job_description.strip() and job.get("url"):
-                try:
-                    from company_research import fetch_jd_from_url
-                    from store import update_job_description as _update_jd
-                    fetched = await asyncio.to_thread(fetch_jd_from_url, job["url"])
-                    if fetched:
-                        job_description = fetched
-                        _update_jd(job_id, fetched)
-                except Exception:
-                    pass
+            job_description = await _ensure_job_description(job_id, job)
 
             # Fetch company culture profile (cached)
             company_culture = None

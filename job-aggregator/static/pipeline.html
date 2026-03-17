@@ -1023,11 +1023,16 @@
         if (fromIdx < 0 || toIdx < 0) return;
         const [moved] = _cultureEntries.splice(fromIdx, 1);
         _cultureEntries.splice(toIdx, 0, moved);
-        await fetch('/api/candidate/culture/reorder', {
+        const res = await fetch('/api/candidate/culture/reorder', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ ordered_ids: _cultureEntries.map(c => c.culture_id) }),
-        });
+        }).catch(() => null);
+        if (!res || !res.ok) {
+          // Revert local mutation on failure
+          _cultureEntries.splice(toIdx, 1);
+          _cultureEntries.splice(fromIdx, 0, moved);
+        }
         await loadCultureEntries();
       });
     });
@@ -1085,9 +1090,15 @@
     await loadCultureEntries();
   });
 
-  document.getElementById('culture-modal-close').addEventListener('click', () => {
+  function _closeCultureModal() {
     document.getElementById('culture-modal').classList.add('hidden');
-  });
+    document.getElementById('culture-edit-area').style.display = 'none';
+    document.getElementById('culture-text-input').style.display = '';
+    document.getElementById('culture-modal-save').style.display = '';
+    _cultureEditId = null;
+  }
+
+  document.getElementById('culture-modal-close').addEventListener('click', _closeCultureModal);
 
   document.getElementById('culture-modal-save').addEventListener('click', async () => {
     const text = document.getElementById('culture-text-input').value.trim();
@@ -1105,7 +1116,7 @@
   });
 
   document.getElementById('culture-modal').addEventListener('click', e => {
-    if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+    if (e.target === e.currentTarget) _closeCultureModal();
   });
 
   // ── Application Package Drawer ─────────────────────────────
@@ -1489,22 +1500,18 @@
           cultureBtn.title = 'Check Culture Fit';
           return;
         }
-        // Poll for result (culture score gets written to application_packages)
+        // Poll for result via lightweight package endpoint (not full pipeline)
         let tries = 0;
         const poll = setInterval(async () => {
           tries++;
-          const data = await fetch('/api/pipeline').then(r => r.json()).catch(() => null);
-          if (data && data.entries) {
-            const entry = data.entries.find(en => en.job_id === jobId);
-            if (entry && entry.culture_score != null) {
-              clearInterval(poll);
-              cultureBtn.classList.remove('running');
-              cultureBtn.title = 'Check Culture Fit';
-              // Update local data and re-render
-              const local = ALL_ENTRIES.find(en => en.job_id === jobId);
-              if (local) local.culture_score = entry.culture_score;
-              renderTable();
-            }
+          const pkg = await fetch(`/api/pipeline/${encodeURIComponent(jobId)}/package`).then(r => r.json()).catch(() => null);
+          if (pkg && pkg.culture_score != null) {
+            clearInterval(poll);
+            cultureBtn.classList.remove('running');
+            cultureBtn.title = 'Check Culture Fit';
+            const local = ALL_ENTRIES.find(en => en.job_id === jobId);
+            if (local) local.culture_score = pkg.culture_score;
+            renderTable();
           }
           if (tries >= 20) {
             clearInterval(poll);

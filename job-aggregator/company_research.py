@@ -114,6 +114,16 @@ def search_company_culture_snippets_zh(company: str) -> list[str]:
 
 # ── 104.com.tw company info ───────────────────────────────────────────────────
 
+_HEADERS_104 = {
+    "User-Agent": (
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    ),
+    "Referer": "https://www.104.com.tw/",
+    "Accept": "application/json",
+}
+
+
 def _extract_104_job_id(url: str) -> str | None:
     """Extract job ID from a 104.com.tw job URL."""
     m = re.search(r"104\.com\.tw/job/([A-Za-z0-9]+)", url)
@@ -126,16 +136,7 @@ def fetch_104_company_info(job_url: str) -> list[str]:
     if not job_id:
         return []
     api_url = f"https://www.104.com.tw/job/ajax/content/{job_id}"
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/120.0.0.0 Safari/537.36"
-        ),
-        "Referer": "https://www.104.com.tw/",
-        "Accept": "application/json",
-    }
-    req = Request(api_url, headers=headers)
+    req = Request(api_url, headers=_HEADERS_104)
     try:
         with urlopen(req, timeout=15) as resp:
             data = json.loads(resp.read().decode("utf-8", errors="ignore"))
@@ -177,36 +178,20 @@ def fetch_jd_from_url(url: str) -> str:
     job_id_104 = _extract_104_job_id(url)
     if job_id_104:
         api_url = f"https://www.104.com.tw/job/ajax/content/{job_id_104}"
-        headers = {
-            "User-Agent": (
-                "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-            ),
-            "Referer": "https://www.104.com.tw/",
-            "Accept": "application/json",
-        }
         try:
-            req = Request(api_url, headers=headers)
+            req = Request(api_url, headers=_HEADERS_104)
             with urlopen(req, timeout=15) as resp:
                 data = json.loads(resp.read().decode("utf-8", errors="ignore"))
-            job_detail = data.get("data", {}).get("jobDetail", {})
-            desc_html = job_detail.get("jobDescription", "")
+            desc_html = data.get("data", {}).get("jobDetail", {}).get("jobDescription", "")
             if desc_html:
                 return _strip_html(desc_html)[:3000]
         except Exception:
             pass
 
     # Generic fallback: fetch URL and extract text
+    _ua = {"User-Agent": _HEADERS_104["User-Agent"]}
     try:
-        req = Request(
-            url,
-            headers={
-                "User-Agent": (
-                    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                    "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-                )
-            },
-        )
+        req = Request(url, headers=_ua)
         with urlopen(req, timeout=15) as resp:
             html = resp.read().decode("utf-8", errors="ignore")
         return _strip_html(html)[:3000]
