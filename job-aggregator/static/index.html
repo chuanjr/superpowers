@@ -953,7 +953,10 @@
       rematchBtn.textContent = '⟳ Run Match Score';
       if (bestOpt) bestOpt.disabled = false;
     } else {
-      el.textContent = 'Error — try re-uploading';
+      const errDetail = RESUME_STATUS.startsWith('error:')
+        ? RESUME_STATUS.slice(6).trim()
+        : RESUME_STATUS;
+      el.textContent = errDetail ? `Error: ${errDetail}` : 'Error — try re-uploading';
       el.classList.add('error');
       clearBtn.style.display = 'block';
       rematchBtn.style.display = 'none';
@@ -998,7 +1001,7 @@
       _pollTimer = setInterval(fetchMatches, 4000);
       fetchMatches();
     } catch (e) {
-      RESUME_STATUS = 'error';
+      RESUME_STATUS = 'error: ' + (e.message || 'Upload failed');
       updateResumeUI();
     }
   }
@@ -1355,11 +1358,13 @@
 
       if (data.status === 'done') {
         RESUME_STATUS = 'done';
-      } else if (data.status === 'processing') {
+      } else if (data.status === 'processing' || data.status === 'pending') {
         RESUME_STATUS = 'processing';
         // Resume polling so we pick up the final result
         if (_pollTimer) clearInterval(_pollTimer);
         _pollTimer = setInterval(fetchMatches, 4000);
+      } else if (data.status && data.status !== 'none') {
+        RESUME_STATUS = data.status; // e.g. 'error: GEMINI_API_KEY not set'
       }
 
       updateResumeUI();

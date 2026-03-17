@@ -23,7 +23,7 @@ import uvicorn
 
 from store import (
     init_db, recover_stale_resumes, get_all_jobs, save_resume, get_resume,
-    get_latest_resume, get_matches,
+    get_latest_resume, get_latest_done_resume, get_matches,
     add_to_pipeline, get_pipeline, update_pipeline_entry, remove_from_pipeline,
     get_pipeline_job_ids, get_latest_resume_identity,
     get_job, save_feedback, update_resume,
@@ -114,6 +114,13 @@ def resume_matches(resume_id: int | None = None) -> JSONResponse:
         resume = get_resume(resume_id)
     else:
         resume = get_latest_resume()
+
+    # When called without a specific resume_id and the latest resume failed,
+    # fall back to the most recent successful one so matches remain visible.
+    if resume_id is None and resume and resume.get("status", "").startswith("error"):
+        done = get_latest_done_resume()
+        if done:
+            resume = done
 
     if not resume:
         return JSONResponse({"status": "none", "matches": []})

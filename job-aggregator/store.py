@@ -271,6 +271,14 @@ def get_latest_resume() -> Optional[dict]:
     return dict(row) if row else None
 
 
+def get_latest_done_resume() -> Optional[dict]:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM resumes WHERE status = 'done' ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+    return dict(row) if row else None
+
+
 def recover_stale_resumes() -> None:
     """On server startup, mark any résumé stuck in 'processing' as done or error.
 
