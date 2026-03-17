@@ -26,11 +26,23 @@ STATE_PATH = CREDS_DIR / "cakeresume_state.json"
 async def _is_logged_in(page) -> bool:
     """Return True if the current page shows logged-in state."""
     try:
-        # Don't navigate away while user is still on the login/signup page
-        if "sign_in" in page.url or "sign_up" in page.url:
+        current_url = page.url
+        # Stay out of the way during any auth-related step (sign_in, sign_up,
+        # OAuth callbacks, password reset, email confirmation, etc.)
+        auth_paths = ("sign_in", "sign_up", "/users/", "password",
+                      "confirmation", "unlock", "oauth", "callback")
+        if any(p in current_url for p in auth_paths):
             return False
-        await page.goto("https://www.cake.me/jobs/Product-Manager", wait_until="domcontentloaded")
-        await page.wait_for_timeout(2000)
+        # Only conclude logged-in if we're actually on cake.me
+        if "cake.me" not in current_url:
+            return False
+        # Check current page DOM without navigating away
+        await page.wait_for_timeout(500)
+        logged_in = await page.query_selector(
+            "[class*='Avatar'], [class*='UserAvatar'], [class*='UserMenu']"
+        )
+        if logged_in:
+            return True
         guest_hint = await page.query_selector("[class*='EmptyResults'], [class*='GuestHint']")
         return guest_hint is None
     except Exception:
