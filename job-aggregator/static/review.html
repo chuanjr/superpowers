@@ -516,7 +516,9 @@
         return s && s.recommendation === 'consider';
       });
     } else if (FILTER === '80plus') {
-      entries = entries.filter(e => (e.score || 0) >= 80);
+      entries = entries.filter(e =>
+        (e.score ?? Math.round((e.similarity ?? 0) * 100)) >= 80
+      );
     }
     const sort = document.getElementById('sort-sel').value;
     if (sort === 'score-desc') entries.sort((a, b) => (b.score || 0) - (a.score || 0));
@@ -716,30 +718,34 @@
     const resp = await fetch(`/api/review/${encodeURIComponent(jobId)}/summary`, { method: 'POST' });
     if (!resp.ok) return;
 
-    // Poll for result
-    const timer = setInterval(async () => {
-      const data = await fetch(`/api/review/${encodeURIComponent(jobId)}/summary`).then(r => r.json());
-      if (data.status === 'done' && data.summary) {
-        clearInterval(timer);
-        entry.summary_json = JSON.stringify(data.summary);
-        entry.summary_status = 'done';
-        if (data.summary.culture_score != null) entry.culture_score = data.summary.culture_score;
-        // Re-render card
-        const oldCard = document.getElementById(`card-${jobId}`);
-        if (oldCard) {
-          const wasExpanded = oldCard.classList.contains('expanded');
-          const newHtml = buildCard(entry);
-          const tmp = document.createElement('div');
-          tmp.innerHTML = newHtml;
-          const newCard = tmp.firstElementChild;
-          if (wasExpanded) newCard.classList.add('expanded');
-          oldCard.replaceWith(newCard);
+    // Poll for result — return a Promise that resolves when done/error
+    return new Promise(resolve => {
+      const timer = setInterval(async () => {
+        const data = await fetch(`/api/review/${encodeURIComponent(jobId)}/summary`).then(r => r.json());
+        if (data.status === 'done' && data.summary) {
+          clearInterval(timer);
+          entry.summary_json = JSON.stringify(data.summary);
+          entry.summary_status = 'done';
+          if (data.summary.culture_score != null) entry.culture_score = data.summary.culture_score;
+          // Re-render card
+          const oldCard = document.getElementById(`card-${jobId}`);
+          if (oldCard) {
+            const wasExpanded = oldCard.classList.contains('expanded');
+            const newHtml = buildCard(entry);
+            const tmp = document.createElement('div');
+            tmp.innerHTML = newHtml;
+            const newCard = tmp.firstElementChild;
+            if (wasExpanded) newCard.classList.add('expanded');
+            oldCard.replaceWith(newCard);
+          }
+          resolve();
+        } else if (data.status === 'error') {
+          clearInterval(timer);
+          entry.summary_status = 'error';
+          resolve();
         }
-      } else if (data.status === 'error') {
-        clearInterval(timer);
-        entry.summary_status = 'error';
-      }
-    }, 2500);
+      }, 2500);
+    });
   }
 
   // ── Batch generate ───────────────────────────────────────────
