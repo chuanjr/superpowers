@@ -309,6 +309,18 @@
     transition: background .15s;
   }
   #pipeline-nav:hover { background: #f0f6ff; }
+  .header-nav-link {
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: #6b7280;
+    white-space: nowrap;
+    padding: 6px 12px;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 7px;
+    transition: background .15s, border-color .15s;
+  }
+  .header-nav-link:hover { background: #f9fafb; border-color: #9ca3af; color: #374151; }
   #pipeline-nav span {
     background: #4f8ef7;
     color: #fff;
@@ -471,7 +483,9 @@
   <div id="stats-bar">loading…</div>
   <button id="btn-import" title="Add a job by URL">+ Import URL</button>
   <button id="btn-refresh" title="Re-fetch all job sources">⟳ Refresh</button>
+  <a href="/review" class="header-nav-link">👀 Review</a>
   <a href="/pipeline" id="pipeline-nav">Pipeline <span id="pipeline-count"></span></a>
+  <a href="/coach" class="header-nav-link">💬 Coach</a>
 </header>
 
 <!-- ── CakeResume Auth Modal ── -->
