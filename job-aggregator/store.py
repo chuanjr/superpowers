@@ -473,24 +473,15 @@ def get_feedback_for_job(job_id: str, resume_id: Optional[int] = None) -> list[d
 # ── Candidate culture ──────────────────────────────────────────────────────────
 
 def upsert_culture(raw_text: str, parsed_json: Optional[str] = None) -> int:
-    """Insert or replace the single culture record. Returns its id."""
+    """Insert a new culture record (supports multiple entries). Returns its id."""
     now = datetime.now(timezone.utc).isoformat()
     with _conn() as conn:
-        existing = conn.execute("SELECT id FROM candidate_culture ORDER BY id DESC LIMIT 1").fetchone()
-        if existing:
-            conn.execute(
-                "UPDATE candidate_culture SET raw_text = ?, parsed_json = COALESCE(?, parsed_json), updated_at = ? WHERE id = ?",
-                (raw_text, parsed_json, now, existing["id"]),
-            )
-            conn.commit()
-            return existing["id"]
-        else:
-            cur = conn.execute(
-                "INSERT INTO candidate_culture (raw_text, parsed_json, created_at, updated_at) VALUES (?, ?, ?, ?)",
-                (raw_text, parsed_json, now, now),
-            )
-            conn.commit()
-            return cur.lastrowid
+        cur = conn.execute(
+            "INSERT INTO candidate_culture (raw_text, parsed_json, created_at, updated_at) VALUES (?, ?, ?, ?)",
+            (raw_text, parsed_json, now, now),
+        )
+        conn.commit()
+        return cur.lastrowid
 
 
 def update_culture_parsed(culture_id: int, parsed_json: str) -> None:
@@ -504,9 +495,23 @@ def update_culture_parsed(culture_id: int, parsed_json: str) -> None:
 
 
 def get_culture() -> Optional[dict]:
+    """Return most recent culture record (for backwards compat)."""
     with _conn() as conn:
         row = conn.execute("SELECT * FROM candidate_culture ORDER BY id DESC LIMIT 1").fetchone()
     return dict(row) if row else None
+
+
+def get_all_culture() -> list[dict]:
+    """Return all culture entries ordered oldest-first."""
+    with _conn() as conn:
+        rows = conn.execute("SELECT * FROM candidate_culture ORDER BY id ASC").fetchall()
+    return [dict(r) for r in rows]
+
+
+def get_culture_raw_text_merged() -> str:
+    """Concatenate all culture raw_text entries for use in AI prompts."""
+    rows = get_all_culture()
+    return "\n\n---\n\n".join(r["raw_text"] for r in rows)
 
 
 # ── Candidate stories ──────────────────────────────────────────────────────────
@@ -536,6 +541,32 @@ def get_stories() -> list[dict]:
     with _conn() as conn:
         rows = conn.execute("SELECT * FROM candidate_stories ORDER BY id").fetchall()
     return [dict(r) for r in rows]
+
+
+def upsert_story(story: dict) -> None:
+    """Upsert a single story. Auto-generates id if not provided."""
+    import time
+    now = datetime.now(timezone.utc).isoformat()
+    if not story.get("id"):
+        # Auto-generate ID like S012
+        with _conn() as conn:
+            count = conn.execute("SELECT COUNT(*) FROM candidate_stories").fetchone()[0]
+        story = {**story, "id": f"S{count + 1:03d}"}
+    with _conn() as conn:
+        conn.execute("""
+            INSERT INTO candidate_stories (id, title, primary_skill, secondary_skill, strength, detail, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+                title           = excluded.title,
+                primary_skill   = excluded.primary_skill,
+                secondary_skill = excluded.secondary_skill,
+                strength        = excluded.strength,
+                detail          = excluded.detail
+        """, (
+            story.get("id"), story.get("title"), story.get("primary_skill"),
+            story.get("secondary_skill"), story.get("strength"), story.get("detail"), now,
+        ))
+        conn.commit()
 
 
 # ── Application packages ───────────────────────────────────────────────────────

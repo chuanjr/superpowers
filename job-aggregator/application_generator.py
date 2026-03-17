@@ -244,10 +244,10 @@ Key requirements:
 async def generate_package(job_id: str, resume_id: int,
                             job: dict, resume: dict) -> dict:
     """Generate a complete application package. Returns the package dict."""
-    from store import get_culture, get_stories, upsert_application_package
+    from store import get_all_culture, get_culture_raw_text_merged, get_stories, upsert_application_package
 
-    culture_row = get_culture()
-    stories     = get_stories()
+    culture_rows = get_all_culture()
+    stories      = get_stories()
 
     jd_text   = job.get("description") or ""
     job_title = job.get("title") or ""
@@ -268,15 +268,30 @@ async def generate_package(job_id: str, resume_id: int,
         return await asyncio.to_thread(check_ats_sync, resume_raw, jd_text)
 
     async def _culture_score():
-        if not culture_row:
+        if not culture_rows:
             return None, None
-        culture_dna = json.loads(culture_row.get("parsed_json") or "{}")
-        if not culture_dna:
+        # Merge parsed DNA from all entries (use latest parsed_json with content)
+        merged_dna: dict = {}
+        for row in culture_rows:
+            if row.get("parsed_json"):
+                try:
+                    d = json.loads(row["parsed_json"])
+                    if d and not d.get("error"):
+                        # Merge lists, keep last summary
+                        for key in ("likes", "dislikes", "green_signals", "red_signals"):
+                            merged_dna[key] = list(dict.fromkeys(
+                                merged_dna.get(key, []) + d.get(key, [])
+                            ))
+                        if d.get("summary"):
+                            merged_dna["summary"] = d["summary"]
+                except Exception:
+                    pass
+        if not merged_dna:
             return None, None
         signals = await asyncio.to_thread(
-            score_culture_sync, culture_dna, job_title, company, jd_text
+            score_culture_sync, merged_dna, job_title, company, jd_text
         )
-        return culture_dna, signals
+        return merged_dna, signals
 
     async def _stories():
         if not stories or not resume_summary:

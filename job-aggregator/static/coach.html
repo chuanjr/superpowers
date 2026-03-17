@@ -1,0 +1,444 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Career Coach</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f0ede8;
+    color: #1a1a2e;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Header ── */
+  .page-header {
+    padding: 28px 48px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    flex-shrink: 0;
+  }
+  .page-header h1 { font-size: 1.6rem; font-weight: 700; }
+  .page-header .subtitle { font-size: 0.85rem; color: #6b7280; margin-top: 3px; }
+  .back-link {
+    position: absolute; top: 16px; left: 48px;
+    font-size: 0.8rem; color: #9ca3af; text-decoration: none;
+  }
+  .back-link:hover { color: #4f8ef7; }
+
+  /* ── Main layout ── */
+  .main-layout {
+    display: flex;
+    gap: 24px;
+    padding: 0 48px 40px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ── Left panel: stories ── */
+  .panel-stories {
+    width: 300px;
+    flex-shrink: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .panel-title {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: #9ca3af; margin-bottom: 4px;
+  }
+  .story-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 10px;
+    padding: 12px 16px;
+    cursor: pointer;
+    transition: box-shadow .12s, border-color .12s;
+  }
+  .story-card:hover { box-shadow: 0 2px 8px rgba(0,0,0,.08); border-color: #c7d7fd; }
+  .story-card-id   { font-size: 0.7rem; font-weight: 700; color: #818cf8; margin-bottom: 2px; }
+  .story-card-title { font-size: 0.85rem; font-weight: 600; }
+  .story-card-skill { font-size: 0.75rem; color: #6b7280; margin-top: 2px; }
+  .story-strength {
+    display: inline-block; font-size: 0.7rem; font-weight: 700;
+    padding: 1px 7px; border-radius: 20px; margin-top: 4px;
+    background: #f3f4f6; color: #6b7280;
+  }
+  .str-5, .str-4 { background: #dcfce7; color: #15803d; }
+  .str-3 { background: #fef9c3; color: #92400e; }
+  .str-2, .str-1 { background: #fee2e2; color: #991b1b; }
+
+  .stories-empty {
+    font-size: 0.82rem; color: #9ca3af; text-align: center; padding: 20px 0;
+  }
+
+  /* Import box */
+  .import-box {
+    background: #fff;
+    border: 1.5px dashed #d1d5db;
+    border-radius: 10px;
+    padding: 14px 16px;
+  }
+  .import-box-title { font-size: 0.78rem; font-weight: 600; margin-bottom: 8px; }
+  .import-input {
+    width: 100%;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 7px;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    font-family: inherit;
+    outline: none;
+    margin-bottom: 8px;
+  }
+  .import-input:focus { border-color: #818cf8; }
+  .btn-import {
+    width: 100%;
+    padding: 7px;
+    background: #1a1a2e; color: #fff;
+    border: none; border-radius: 7px;
+    font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    transition: background .12s;
+  }
+  .btn-import:hover { background: #2d2d4e; }
+  .btn-import:disabled { background: #9ca3af; cursor: default; }
+  .import-status { font-size: 0.75rem; color: #6b7280; margin-top: 6px; }
+
+  /* ── Right panel: chat ── */
+  .panel-chat {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    overflow: hidden;
+    min-height: 600px;
+  }
+  .chat-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid #f3f4f6;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .chat-header h2 { font-size: 0.9rem; font-weight: 700; }
+  .chat-header p  { font-size: 0.78rem; color: #6b7280; margin-top: 2px; }
+  .btn-clear-chat {
+    font-size: 0.75rem; color: #9ca3af; background: none;
+    border: 1px solid #e5e7eb; border-radius: 5px;
+    padding: 3px 9px; cursor: pointer;
+  }
+  .btn-clear-chat:hover { color: #374151; border-color: #9ca3af; }
+
+  .chat-messages {
+    flex: 1; overflow-y: auto;
+    padding: 20px; display: flex; flex-direction: column; gap: 14px;
+  }
+  .chat-msg { display: flex; gap: 10px; }
+  .chat-msg.user { flex-direction: row-reverse; }
+  .chat-bubble {
+    max-width: 80%; padding: 12px 16px; border-radius: 12px;
+    font-size: 0.85rem; line-height: 1.6; color: #374151;
+    background: #f3f4f6; white-space: pre-wrap;
+  }
+  .chat-msg.user .chat-bubble { background: #1a1a2e; color: #fff; border-radius: 12px 12px 2px 12px; }
+  .chat-msg.assistant .chat-bubble { border-radius: 2px 12px 12px 12px; }
+  .chat-thinking {
+    font-size: 0.8rem; color: #9ca3af; font-style: italic;
+    padding: 4px 16px;
+  }
+
+  .chat-input-area {
+    border-top: 1px solid #f3f4f6; padding: 14px 20px;
+    display: flex; gap: 10px; flex-shrink: 0;
+  }
+  .chat-input {
+    flex: 1; border: 1.5px solid #e5e7eb; border-radius: 10px;
+    padding: 10px 14px; font-size: 0.88rem; font-family: inherit;
+    outline: none; resize: none; min-height: 44px; max-height: 140px;
+    line-height: 1.5;
+  }
+  .chat-input:focus { border-color: #818cf8; }
+  .btn-send {
+    padding: 10px 20px;
+    background: #1a1a2e; color: #fff;
+    border: none; border-radius: 10px;
+    font-size: 0.88rem; font-weight: 600; cursor: pointer;
+    transition: background .12s; align-self: flex-end;
+  }
+  .btn-send:hover { background: #2d2d4e; }
+  .btn-send:disabled { background: #9ca3af; cursor: default; }
+
+  /* ── Story detail modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.35);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: #fff;
+    border-radius: 14px;
+    padding: 24px 28px;
+    width: 560px;
+    max-width: 95vw;
+    max-height: 80vh;
+    overflow-y: auto;
+    box-shadow: 0 8px 40px rgba(0,0,0,.2);
+  }
+  .modal h3 { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+  .modal .story-meta { font-size: 0.78rem; color: #6b7280; margin-bottom: 16px; }
+  .modal .story-body { font-size: 0.85rem; line-height: 1.7; color: #374151; white-space: pre-wrap; }
+  .modal-close {
+    float: right; background: none; border: none; font-size: 1.3rem;
+    color: #9ca3af; cursor: pointer; margin-top: -4px;
+  }
+  .modal-close:hover { color: #374151; }
+
+  /* Quick action chips */
+  .quick-actions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 20px 12px; flex-shrink: 0; }
+  .quick-chip {
+    padding: 4px 12px;
+    background: #f3f4f6; color: #374151;
+    border: 1px solid #e5e7eb; border-radius: 20px;
+    font-size: 0.78rem; cursor: pointer;
+    transition: background .12s, border-color .12s;
+  }
+  .quick-chip:hover { background: #e5e7eb; border-color: #9ca3af; }
+</style>
+</head>
+<body>
+
+<a href="/pipeline" class="back-link">← Pipeline</a>
+
+<div class="page-header">
+  <div>
+    <h1>💬 Career Coach</h1>
+    <div class="subtitle">Story management, interview prep, and career advice</div>
+  </div>
+</div>
+
+<div class="main-layout">
+  <!-- Left: stories list -->
+  <div class="panel-stories">
+    <div class="panel-title">Storybank</div>
+    <div id="stories-list">
+      <div class="stories-empty">Loading…</div>
+    </div>
+
+    <!-- Import from coaching_state.md -->
+    <div class="import-box">
+      <div class="import-box-title">📥 Import from coaching_state.md</div>
+      <input class="import-input" id="import-path" type="text"
+        placeholder="Path e.g. ~/coaching_state.md" />
+      <button class="btn-import" id="btn-import">Import Stories</button>
+      <div class="import-status" id="import-status"></div>
+    </div>
+  </div>
+
+  <!-- Right: chat -->
+  <div class="panel-chat">
+    <div class="chat-header">
+      <div>
+        <h2>General Coaching</h2>
+        <p>Add or improve stories, analyze your portfolio, get career advice</p>
+      </div>
+      <button class="btn-clear-chat" id="btn-clear-chat">Clear chat</button>
+    </div>
+    <div class="chat-messages" id="chat-messages"></div>
+    <div id="chat-thinking" class="chat-thinking" style="display:none">Coach is thinking…</div>
+    <div class="quick-actions" id="quick-actions">
+      <button class="quick-chip" data-msg="Help me add a new story to my storybank.">+ Add new story</button>
+      <button class="quick-chip" data-msg="Which stories in my storybank are weakest? Help me improve one.">Improve a story</button>
+      <button class="quick-chip" data-msg="Analyze my story portfolio for gaps. What competencies am I missing?">Gap analysis</button>
+      <button class="quick-chip" data-msg="Give me a rapid-retrieval drill — ask me 5 quick questions and I'll respond with a story.">Retrieval drill</button>
+      <button class="quick-chip" data-msg="Show me a summary of all my stories with their strengths.">View all stories</button>
+    </div>
+    <div class="chat-input-area">
+      <textarea class="chat-input" id="chat-input" rows="2"
+        placeholder="Ask me to add a story, improve one, analyze your portfolio, or just chat about your job search…"></textarea>
+      <button class="btn-send" id="btn-send">Send</button>
+    </div>
+  </div>
+</div>
+
+<!-- Story detail modal -->
+<div class="modal-overlay hidden" id="story-modal">
+  <div class="modal">
+    <button class="modal-close" id="story-modal-close">×</button>
+    <h3 id="story-modal-title"></h3>
+    <div class="story-meta" id="story-modal-meta"></div>
+    <div class="story-body" id="story-modal-body"></div>
+  </div>
+</div>
+
+<script>
+  let MESSAGES = [];  // [{role, content}]
+  let STORIES  = [];
+
+  function escHtml(str) {
+    return String(str || '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  // ── Stories ─────────────────────────────────────────────────
+
+  async function loadStories() {
+    const data = await fetch('/api/candidate/stories').then(r => r.json());
+    STORIES = data.stories || [];
+    renderStories();
+  }
+
+  function renderStories() {
+    const list = document.getElementById('stories-list');
+    if (!STORIES.length) {
+      list.innerHTML = '<div class="stories-empty">No stories yet.<br>Chat with the coach to add some!</div>';
+      return;
+    }
+    list.innerHTML = STORIES.map(s => {
+      const str = s.strength || 0;
+      return `<div class="story-card" data-story-id="${escHtml(s.id)}">
+        <div class="story-card-id">${escHtml(s.id)}</div>
+        <div class="story-card-title">${escHtml(s.title)}</div>
+        <div class="story-card-skill">${escHtml(s.primary_skill || '')}${s.secondary_skill ? ' · ' + escHtml(s.secondary_skill) : ''}</div>
+        <span class="story-strength str-${str}">${'★'.repeat(str)}${'☆'.repeat(5 - str)} ${str}/5</span>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('stories-list').addEventListener('click', e => {
+    const card = e.target.closest('.story-card');
+    if (!card) return;
+    const story = STORIES.find(s => s.id === card.dataset.storyId);
+    if (story) openStoryModal(story);
+  });
+
+  function openStoryModal(story) {
+    document.getElementById('story-modal-title').textContent = `[${story.id}] ${story.title}`;
+    document.getElementById('story-modal-meta').textContent =
+      `${story.primary_skill || ''}${story.secondary_skill ? ' · ' + story.secondary_skill : ''} | Strength: ${story.strength || '?'}/5`;
+    document.getElementById('story-modal-body').textContent = story.detail || '(no detail stored)';
+    document.getElementById('story-modal').classList.remove('hidden');
+  }
+
+  document.getElementById('story-modal-close').addEventListener('click', () => {
+    document.getElementById('story-modal').classList.add('hidden');
+  });
+  document.getElementById('story-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+  });
+
+  // ── Import ──────────────────────────────────────────────────
+
+  document.getElementById('btn-import').addEventListener('click', async () => {
+    const path = document.getElementById('import-path').value.trim();
+    if (!path) return;
+    const btn = document.getElementById('btn-import');
+    const status = document.getElementById('import-status');
+    btn.disabled = true; btn.textContent = 'Importing…';
+    status.textContent = '';
+    try {
+      const resp = await fetch('/api/candidate/stories/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ file_path: path }),
+      });
+      const data = await resp.json();
+      if (resp.ok) {
+        status.textContent = `✓ Imported ${data.count} stories.`;
+        await loadStories();
+      } else {
+        status.textContent = `Error: ${data.detail || 'Import failed'}`;
+      }
+    } catch (err) {
+      status.textContent = 'Network error.';
+    } finally {
+      btn.disabled = false; btn.textContent = 'Import Stories';
+    }
+  });
+
+  // ── Chat ────────────────────────────────────────────────────
+
+  function appendMsg(role, text) {
+    const container = document.getElementById('chat-messages');
+    const div = document.createElement('div');
+    div.className = `chat-msg ${role}`;
+    div.innerHTML = `<div class="chat-bubble">${escHtml(text)}</div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  async function sendMessage(text) {
+    if (!text.trim()) return;
+    appendMsg('user', text);
+    MESSAGES.push({ role: 'user', content: text });
+    document.getElementById('chat-input').value = '';
+
+    const sendBtn = document.getElementById('btn-send');
+    sendBtn.disabled = true;
+    document.getElementById('chat-thinking').style.display = 'block';
+
+    try {
+      const resp = await fetch('/api/coach/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: MESSAGES }),
+      });
+      const data = await resp.json();
+      const reply = data.message || '(no response)';
+      MESSAGES.push({ role: 'assistant', content: reply });
+      appendMsg('assistant', reply);
+
+      if (data.saved_story_id) {
+        appendMsg('assistant', `✅ Story saved to storybank as ${data.saved_story_id}.`);
+        await loadStories();
+      }
+    } catch (err) {
+      appendMsg('assistant', 'Sorry, something went wrong. Please try again.');
+    } finally {
+      sendBtn.disabled = false;
+      document.getElementById('chat-thinking').style.display = 'none';
+      document.getElementById('chat-messages').scrollTop = document.getElementById('chat-messages').scrollHeight;
+    }
+  }
+
+  document.getElementById('btn-send').addEventListener('click', () => {
+    sendMessage(document.getElementById('chat-input').value.trim());
+  });
+
+  document.getElementById('chat-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e.target.value.trim()); }
+  });
+
+  document.getElementById('btn-clear-chat').addEventListener('click', () => {
+    MESSAGES = [];
+    document.getElementById('chat-messages').innerHTML = '';
+    greet();
+  });
+
+  document.getElementById('quick-actions').addEventListener('click', e => {
+    const chip = e.target.closest('.quick-chip');
+    if (chip) sendMessage(chip.dataset.msg);
+  });
+
+  function greet() {
+    appendMsg('assistant', `Hi! I'm your career coach. I can help you build and refine your interview story portfolio.\n\nUse the quick-action chips below, or just tell me what you'd like to work on. For example:\n• "Help me add a new story about a time I led a complex product launch"\n• "Improve my story S003 — I think the impact is weak"\n• "Analyze my portfolio gaps for a Senior PM role at a growth-stage startup"\n\nWhat would you like to work on?`);
+  }
+
+  // ── Init ────────────────────────────────────────────────────
+
+  loadStories();
+  greet();
+</script>
+
+</body>
+</html>

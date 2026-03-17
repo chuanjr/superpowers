@@ -5,6 +5,7 @@ Usage:
   python server.py            # starts at http://localhost:8000
   python server.py --port 9000
 """
+import asyncio
 import re
 import subprocess
 import sys
@@ -374,23 +375,29 @@ async def save_culture(background_tasks: BackgroundTasks, body: dict) -> JSONRes
 
 @app.get("/api/candidate/culture")
 def get_culture_endpoint() -> JSONResponse:
-    from store import get_culture
-    row = get_culture()
-    if not row:
-        return JSONResponse({"status": "none"})
+    from store import get_all_culture
     import json
-    parsed = {}
-    if row.get("parsed_json"):
-        try:
-            parsed = json.loads(row["parsed_json"])
-        except Exception:
-            pass
+    rows = get_all_culture()
+    if not rows:
+        return JSONResponse({"status": "none", "entries": []})
+    entries = []
+    for row in rows:
+        parsed = {}
+        if row.get("parsed_json"):
+            try:
+                parsed = json.loads(row["parsed_json"])
+            except Exception:
+                pass
+        entries.append({
+            "culture_id": row["id"],
+            "raw_text": row["raw_text"],
+            "parsed": parsed,
+            "updated_at": row.get("updated_at"),
+        })
     return JSONResponse({
         "status": "ok",
-        "culture_id": row["id"],
-        "raw_text": row["raw_text"],
-        "parsed": parsed,
-        "updated_at": row.get("updated_at"),
+        "entries": entries,
+        "count": len(entries),
     })
 
 
@@ -557,6 +564,150 @@ def download_package(job_id: str):
     )
 
 
+# ── Career coach endpoints ────────────────────────────────────────────────────
+
+@app.post("/api/coach/chat")
+async def coach_chat(body: dict) -> JSONResponse:
+    """General career coaching conversation (story management, career advice)."""
+    import json as _json
+    messages = body.get("messages") or []
+    if not messages:
+        raise HTTPException(400, "messages required")
+
+    from store import get_stories, get_all_culture, upsert_story
+    from coach import chat
+
+    stories = get_stories()
+    culture_rows = get_all_culture()
+
+    # Build merged culture DNA
+    culture_dna = None
+    for row in culture_rows:
+        if row.get("parsed_json"):
+            try:
+                d = _json.loads(row["parsed_json"])
+                if d and not d.get("error"):
+                    if culture_dna is None:
+                        culture_dna = {"likes": [], "dislikes": [], "green_signals": [], "red_signals": []}
+                    for key in ("likes", "dislikes", "green_signals", "red_signals"):
+                        culture_dna[key] = list(dict.fromkeys(
+                            culture_dna.get(key, []) + d.get(key, [])
+                        ))
+                    if d.get("summary"):
+                        culture_dna["summary"] = d["summary"]
+            except Exception:
+                pass
+
+    resume = get_latest_resume()
+    resume_summary = ""
+    if resume and resume.get("parsed_json"):
+        try:
+            parsed = _json.loads(resume["parsed_json"])
+            resume_summary = parsed.get("summary") or ""
+        except Exception:
+            pass
+
+    text, story_to_save = await asyncio.to_thread(
+        chat, messages, stories, culture_dna, resume_summary
+    )
+
+    saved_story_id = None
+    if story_to_save:
+        upsert_story(story_to_save)
+        saved_story_id = story_to_save.get("id")
+
+    return JSONResponse({
+        "message": text,
+        "saved_story_id": saved_story_id,
+    })
+
+
+@app.post("/api/coach/chat/{job_id}")
+async def coach_chat_job(job_id: str, body: dict) -> JSONResponse:
+    """Job-specific coaching conversation (decode JD, prep questions, match stories)."""
+    import json as _json
+    messages = body.get("messages") or []
+    if not messages:
+        raise HTTPException(400, "messages required")
+
+    from store import get_stories, get_all_culture, get_application_package, upsert_story
+    from coach import chat
+
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    stories = get_stories()
+    culture_rows = get_all_culture()
+
+    culture_dna = None
+    for row in culture_rows:
+        if row.get("parsed_json"):
+            try:
+                d = _json.loads(row["parsed_json"])
+                if d and not d.get("error"):
+                    if culture_dna is None:
+                        culture_dna = {"likes": [], "dislikes": [], "green_signals": [], "red_signals": []}
+                    for key in ("likes", "dislikes", "green_signals", "red_signals"):
+                        culture_dna[key] = list(dict.fromkeys(
+                            culture_dna.get(key, []) + d.get(key, [])
+                        ))
+                    if d.get("summary"):
+                        culture_dna["summary"] = d["summary"]
+            except Exception:
+                pass
+
+    resume = get_latest_resume()
+    resume_summary = ""
+    culture_score = None
+    culture_signals = None
+    if resume:
+        if resume.get("parsed_json"):
+            try:
+                parsed = _json.loads(resume["parsed_json"])
+                resume_summary = parsed.get("summary") or ""
+            except Exception:
+                pass
+        pkg = get_application_package(job_id, resume["id"])
+        if pkg:
+            culture_score = pkg.get("culture_score")
+            if pkg.get("culture_signals"):
+                try:
+                    culture_signals = _json.loads(pkg["culture_signals"])
+                except Exception:
+                    pass
+
+    text, story_to_save = await asyncio.to_thread(
+        chat, messages, stories, culture_dna, resume_summary,
+        job, culture_score, culture_signals
+    )
+
+    saved_story_id = None
+    if story_to_save:
+        upsert_story(story_to_save)
+        saved_story_id = story_to_save.get("id")
+
+    return JSONResponse({
+        "message": text,
+        "saved_story_id": saved_story_id,
+    })
+
+
+@app.post("/api/candidate/stories/import")
+async def import_stories_from_file(body: dict) -> JSONResponse:
+    """Import stories from a coaching_state.md file path."""
+    file_path = (body.get("file_path") or "").strip()
+    if not file_path:
+        raise HTTPException(400, "file_path required")
+
+    from coach import import_coaching_state
+    from store import upsert_stories
+
+    stories = await asyncio.to_thread(import_coaching_state, file_path)
+    upsert_stories(stories)
+    return JSONResponse({"ok": True, "count": len(stories), "stories": stories})
+
+
 # ── Static / SPA ───────────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
@@ -575,6 +726,11 @@ def jobs_page() -> FileResponse:
 @app.get("/pipeline")
 def pipeline_page() -> FileResponse:
     return FileResponse(str(_STATIC / "pipeline.html"))
+
+
+@app.get("/coach")
+def coach_page() -> FileResponse:
+    return FileResponse(str(_STATIC / "coach.html"))
 
 
 if __name__ == "__main__":

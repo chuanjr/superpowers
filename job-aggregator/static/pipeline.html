@@ -333,6 +333,185 @@
     color: #9ca3af;
   }
 
+  /* ── Culture badge ── */
+  .culture-badge { font-size: 1rem; cursor: default; }
+  .culture-score-txt { font-size: 0.72rem; color: #6b7280; margin-left: 2px; }
+
+  /* ── Action buttons in table ── */
+  .btn-pkg, .btn-coach-job {
+    background: none;
+    border: 1.5px solid #e5e7eb;
+    border-radius: 6px;
+    font-size: 0.82rem;
+    padding: 3px 7px;
+    cursor: pointer;
+    transition: border-color .12s, background .12s;
+    color: #374151;
+  }
+  .btn-pkg:hover      { border-color: #818cf8; background: #f0f0ff; }
+  .btn-coach-job:hover { border-color: #34d399; background: #f0fdf4; }
+
+  /* ── Right drawer ── */
+  .drawer-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.2);
+    z-index: 200;
+    display: none;
+  }
+  .drawer-overlay.open { display: block; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 480px;
+    max-width: 95vw;
+    background: #fff;
+    box-shadow: -4px 0 32px rgba(0,0,0,.15);
+    display: flex; flex-direction: column;
+    z-index: 201;
+    transform: translateX(100%);
+    transition: transform .22s cubic-bezier(.4,0,.2,1);
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid #f3f4f6;
+    flex-shrink: 0;
+  }
+  .drawer-header h2 { font-size: 1rem; font-weight: 700; }
+  .drawer-header .job-meta { font-size: 0.78rem; color: #6b7280; margin-top: 2px; }
+  .btn-close-drawer {
+    background: none; border: none; font-size: 1.3rem; color: #9ca3af;
+    cursor: pointer; padding: 4px; border-radius: 4px;
+    transition: color .12s;
+  }
+  .btn-close-drawer:hover { color: #374151; }
+  .drawer-body {
+    flex: 1; overflow-y: auto;
+    padding: 20px 24px;
+  }
+
+  /* ── Package sections ── */
+  .pkg-section { margin-bottom: 20px; }
+  .pkg-section-title {
+    font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: #9ca3af; margin-bottom: 8px;
+  }
+  .pkg-text {
+    font-size: 0.85rem; line-height: 1.6; color: #374151;
+    background: #f9fafb; border-radius: 8px; padding: 12px 14px;
+    white-space: pre-wrap;
+  }
+  .pkg-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip-green { background: #dcfce7; color: #15803d; font-size: 0.75rem; padding: 3px 10px; border-radius: 20px; }
+  .chip-yellow { background: #fef9c3; color: #92400e; font-size: 0.75rem; padding: 3px 10px; border-radius: 20px; }
+  .chip-red   { background: #fee2e2; color: #991b1b; font-size: 0.75rem; padding: 3px 10px; border-radius: 20px; }
+  .chip-blue  { background: #dbeafe; color: #1e40af; font-size: 0.75rem; padding: 3px 10px; border-radius: 20px; }
+  .chip-gray  { background: #f3f4f6; color: #6b7280; font-size: 0.75rem; padding: 3px 10px; border-radius: 20px; }
+  .story-match { background: #f9fafb; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }
+  .story-match-id { font-size: 0.72rem; font-weight: 700; color: #818cf8; margin-bottom: 2px; }
+  .story-match-bullet { font-size: 0.84rem; color: #374151; }
+  .copy-btn {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.72rem; color: #6b7280; background: none;
+    border: 1px solid #e5e7eb; border-radius: 5px;
+    padding: 2px 8px; cursor: pointer; margin-top: 6px;
+    transition: border-color .12s;
+  }
+  .copy-btn:hover { border-color: #9ca3af; color: #374151; }
+  .copy-btn.copied { border-color: #16a34a; color: #16a34a; }
+  .pkg-textarea {
+    width: 100%; min-height: 80px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    font-size: 0.84rem; font-family: inherit;
+    padding: 10px 12px; resize: vertical; outline: none;
+    line-height: 1.5; color: #374151;
+  }
+  .pkg-textarea:focus { border-color: #818cf8; }
+  .drawer-footer {
+    padding: 16px 24px;
+    border-top: 1px solid #f3f4f6;
+    display: flex; gap: 8px; flex-shrink: 0;
+  }
+  .btn-gen {
+    padding: 8px 20px;
+    background: #1a1a2e; color: #fff;
+    border: none; border-radius: 8px;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: background .12s;
+  }
+  .btn-gen:hover { background: #2d2d4e; }
+  .btn-gen:disabled { background: #9ca3af; cursor: default; }
+  .btn-download {
+    padding: 8px 16px;
+    background: none; color: #374151;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    font-size: 0.85rem; cursor: pointer;
+    transition: border-color .12s;
+  }
+  .btn-download:hover { border-color: #9ca3af; }
+  .pkg-status-msg { font-size: 0.8rem; color: #9ca3af; padding: 6px 0; }
+
+  /* ── Coach chat drawer ── */
+  .chat-messages {
+    flex: 1; overflow-y: auto;
+    padding: 16px 24px; display: flex; flex-direction: column; gap: 12px;
+  }
+  .chat-msg { display: flex; gap: 10px; }
+  .chat-msg.user { flex-direction: row-reverse; }
+  .chat-bubble {
+    max-width: 82%; padding: 10px 14px; border-radius: 12px;
+    font-size: 0.85rem; line-height: 1.5; color: #374151;
+    background: #f3f4f6; white-space: pre-wrap;
+  }
+  .chat-msg.user .chat-bubble { background: #1a1a2e; color: #fff; border-radius: 12px 12px 2px 12px; }
+  .chat-msg.assistant .chat-bubble { border-radius: 2px 12px 12px 12px; }
+  .chat-input-row {
+    display: flex; gap: 8px; padding: 12px 24px 16px;
+    border-top: 1px solid #f3f4f6; flex-shrink: 0;
+  }
+  .chat-input {
+    flex: 1; border: 1.5px solid #e5e7eb; border-radius: 8px;
+    padding: 8px 12px; font-size: 0.85rem; font-family: inherit;
+    outline: none; resize: none; min-height: 40px; max-height: 120px;
+  }
+  .chat-input:focus { border-color: #818cf8; }
+  .btn-send {
+    padding: 8px 16px;
+    background: #1a1a2e; color: #fff;
+    border: none; border-radius: 8px;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: background .12s; align-self: flex-end;
+  }
+  .btn-send:hover { background: #2d2d4e; }
+  .btn-send:disabled { background: #9ca3af; cursor: default; }
+  .chat-thinking {
+    font-size: 0.8rem; color: #9ca3af; font-style: italic;
+    padding: 4px 14px;
+  }
+
+  /* ── Culture DNA modal (multi-entry) ── */
+  .culture-entries-list { margin-bottom: 16px; }
+  .culture-entry-item {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 8px 10px; background: #f9fafb;
+    border: 1px solid #e5e7eb; border-radius: 7px;
+    margin-bottom: 8px; font-size: 0.8rem; color: #374151;
+  }
+  .culture-entry-excerpt { flex: 1; line-height: 1.4; }
+  .culture-entry-meta { font-size: 0.7rem; color: #9ca3af; margin-top: 2px; }
+
+  /* ── Header right buttons ── */
+  .header-actions { display: flex; gap: 8px; align-items: center; }
+  .btn-header-action {
+    padding: 7px 16px;
+    background: #fff; color: #374151;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    font-size: 0.82rem; font-weight: 600; cursor: pointer;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 6px;
+    transition: border-color .12s, background .12s;
+  }
+  .btn-header-action:hover { border-color: #9ca3af; background: #f9fafb; }
+
   /* ── Feedback modal ── */
   .modal-overlay {
     position: fixed; inset: 0;
@@ -395,7 +574,13 @@
     <h1 id="header-name">Pipeline</h1>
     <div class="subtitle" id="header-subtitle">Job Search Tracker</div>
   </div>
-  <div class="updated" id="header-updated"></div>
+  <div style="display:flex;align-items:center;gap:16px">
+    <div class="updated" id="header-updated"></div>
+    <div class="header-actions">
+      <button class="btn-header-action" id="btn-culture-dna">⚙ Culture DNA</button>
+      <a href="/coach" class="btn-header-action">💬 Coach</a>
+    </div>
+  </div>
 </div>
 
 <div class="stats-row">
@@ -437,6 +622,7 @@
   <button class="tab" data-filter="applied">Applied</button>
   <button class="tab" data-filter="interviewing">Interviewing</button>
   <button class="tab" data-filter="pass">Pass</button>
+  <button class="tab" data-filter="culture-aligned" style="border-color:#86efac;color:#15803d">🟢 Aligned</button>
   <div class="spacer"></div>
   <span class="role-count" id="role-count"></span>
   <span class="sort-label">Sort by</span>
@@ -454,6 +640,7 @@
       <tr>
         <th>Company / Role</th>
         <th>Market</th>
+        <th>Culture</th>
         <th>Fit Score</th>
         <th>Verdict</th>
         <th>Status</th>
@@ -463,9 +650,63 @@
       </tr>
     </thead>
     <tbody id="pipeline-tbody">
-      <tr><td colspan="8"><div class="empty">Loading…</div></td></tr>
+      <tr><td colspan="9"><div class="empty">Loading…</div></td></tr>
     </tbody>
   </table>
+</div>
+
+<!-- ── Culture DNA Modal ── -->
+<div class="modal-overlay hidden" id="culture-modal">
+  <div class="modal" style="width:500px;max-width:95vw">
+    <h3>⚙ Culture DNA</h3>
+    <p style="font-size:0.82rem;color:#6b7280;margin-bottom:16px">Paste your culture discussion (values, likes/dislikes, ideal workplace). You can add multiple entries — they'll all be merged when scoring jobs.</p>
+    <div class="culture-entries-list" id="culture-entries-list" style="max-height:200px;overflow-y:auto"></div>
+    <textarea id="culture-text-input" class="pkg-textarea" rows="5" placeholder="Paste culture discussion here…"></textarea>
+    <div class="modal-btns" style="margin-top:12px">
+      <button class="btn-cancel" id="culture-modal-close">Close</button>
+      <button class="btn-confirm" id="culture-modal-save">+ Add Entry</button>
+    </div>
+  </div>
+</div>
+
+<!-- ── Application Package Drawer ── -->
+<div class="drawer-overlay" id="pkg-drawer-overlay">
+  <div class="drawer" id="pkg-drawer">
+    <div class="drawer-header">
+      <div>
+        <h2>📋 Application Package</h2>
+        <div class="job-meta" id="pkg-job-meta"></div>
+      </div>
+      <button class="btn-close-drawer" id="pkg-drawer-close">×</button>
+    </div>
+    <div class="drawer-body" id="pkg-drawer-body">
+      <div class="pkg-status-msg" id="pkg-status-msg">Click Generate to create your package.</div>
+    </div>
+    <div class="drawer-footer">
+      <button class="btn-gen" id="pkg-gen-btn">✨ Generate</button>
+      <button class="btn-download" id="pkg-download-btn" style="display:none">⬇ Download .txt</button>
+      <span class="pkg-status-msg" id="pkg-gen-status"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ── Job Coach Chat Drawer ── -->
+<div class="drawer-overlay" id="coach-drawer-overlay">
+  <div class="drawer" id="coach-drawer" style="display:flex;flex-direction:column">
+    <div class="drawer-header">
+      <div>
+        <h2>💬 Job Coach</h2>
+        <div class="job-meta" id="coach-job-meta"></div>
+      </div>
+      <button class="btn-close-drawer" id="coach-drawer-close">×</button>
+    </div>
+    <div class="chat-messages" id="coach-chat-messages"></div>
+    <div id="coach-thinking" class="chat-thinking" style="display:none">Coach is thinking…</div>
+    <div class="chat-input-row">
+      <textarea class="chat-input" id="coach-chat-input" rows="2" placeholder="Ask about this role, request interview prep, or discuss story fit…"></textarea>
+      <button class="btn-send" id="coach-send-btn">Send</button>
+    </div>
+  </div>
 </div>
 
 <!-- ── Feedback Modal ── -->
@@ -656,7 +897,11 @@
 
   function getFiltered() {
     let entries = [...ALL_ENTRIES];
-    if (FILTER !== 'all') entries = entries.filter(e => e.status === FILTER);
+    if (FILTER === 'culture-aligned') {
+      entries = entries.filter(e => (e.culture_score ?? 0) >= 70);
+    } else if (FILTER !== 'all') {
+      entries = entries.filter(e => e.status === FILTER);
+    }
 
     const sort = document.getElementById('sort-sel').value;
     if (sort === 'score-desc') {
@@ -677,7 +922,7 @@
 
     const tbody = document.getElementById('pipeline-tbody');
     if (!entries.length) {
-      tbody.innerHTML = `<tr><td colspan="8"><div class="empty">No entries${FILTER !== 'all' ? ' in this stage' : ''}.<br><a href="/jobs" style="color:#4f8ef7;font-size:0.85rem">Browse Job Board →</a></div></td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="9"><div class="empty">No entries${FILTER !== 'all' ? ' in this stage' : ''}.<br><a href="/jobs" style="color:#4f8ef7;font-size:0.85rem">Browse Job Board →</a></div></td></tr>`;
       return;
     }
 
@@ -698,12 +943,23 @@
 
       const tip = e.explanation ? ` title="${escHtml(e.explanation)}"` : '';
 
+      // Culture badge
+      const cs = e.culture_score;
+      const cultureBadge = cs == null
+        ? '<span class="culture-badge" title="Not scored">⚫</span>'
+        : cs >= 70
+          ? `<span class="culture-badge" title="${cs}/100">🟢</span> <span class="culture-score-txt">${cs}</span>`
+          : cs >= 40
+            ? `<span class="culture-badge" title="${cs}/100">🟡</span> <span class="culture-score-txt">${cs}</span>`
+            : `<span class="culture-badge" title="${cs}/100">🔴</span> <span class="culture-score-txt">${cs}</span>`;
+
       return `<tr data-job-id="${escHtml(e.job_id)}">
   <td class="col-company">
     <div class="company-name"><a href="${escHtml(e.url || '#')}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${escHtml(e.company || '—')}</a></div>
     <div class="role-name">${escHtml(e.title || '')}</div>
   </td>
   <td>${marketTag}</td>
+  <td>${cultureBadge}</td>
   <td>
     <div class="fit-bar-wrap"${tip}>
       <span class="fit-score">${scoreStr}</span>
@@ -724,7 +980,9 @@
   </td>
   <td class="col-date">${fmtDate(e.added_at)}</td>
   <td>
-    <div style="display:flex;align-items:center;gap:4px">
+    <div style="display:flex;align-items:center;gap:4px;flex-wrap:nowrap">
+      <button class="btn-pkg" data-action="open-pkg" data-job-id="${escHtml(e.job_id)}" title="Application Package">📋</button>
+      <button class="btn-coach-job" data-action="open-coach" data-job-id="${escHtml(e.job_id)}" title="Job Coach">💬</button>
       <div class="feedback-btns">
         <button class="btn-feedback${e._fb === 'up' ? ' up' : ''}" data-action="feedback-up" data-job-id="${escHtml(e.job_id)}" title="Score too low">👍</button>
         <button class="btn-feedback${e._fb === 'down' ? ' down' : ''}" data-action="feedback-down" data-job-id="${escHtml(e.job_id)}" title="Score too high">👎</button>
@@ -872,6 +1130,310 @@
       _fbJob = _fbRating = null;
     }
   });
+
+  // ── Culture DNA Modal ──────────────────────────────────────
+
+  async function loadCultureEntries() {
+    const data = await fetch('/api/candidate/culture').then(r => r.json());
+    const list = document.getElementById('culture-entries-list');
+    if (!data.entries || !data.entries.length) {
+      list.innerHTML = '<div style="font-size:0.8rem;color:#9ca3af">No culture entries yet.</div>';
+      return;
+    }
+    list.innerHTML = data.entries.map((entry, i) => {
+      const excerpt = (entry.raw_text || '').slice(0, 120).replace(/\n/g, ' ');
+      const date = entry.updated_at ? new Date(entry.updated_at).toLocaleDateString() : '';
+      const parsed = entry.parsed || {};
+      const summary = parsed.summary || '';
+      return `<div class="culture-entry-item">
+        <div class="culture-entry-excerpt">
+          <div>${escHtml(excerpt)}${entry.raw_text.length > 120 ? '…' : ''}</div>
+          ${summary ? `<div class="culture-entry-meta">${escHtml(summary.slice(0,80))}</div>` : ''}
+        </div>
+        <div style="font-size:0.7rem;color:#9ca3af;white-space:nowrap">${date}</div>
+      </div>`;
+    }).join('');
+  }
+
+  document.getElementById('btn-culture-dna').addEventListener('click', async () => {
+    document.getElementById('culture-modal').classList.remove('hidden');
+    await loadCultureEntries();
+  });
+
+  document.getElementById('culture-modal-close').addEventListener('click', () => {
+    document.getElementById('culture-modal').classList.add('hidden');
+  });
+
+  document.getElementById('culture-modal-save').addEventListener('click', async () => {
+    const text = document.getElementById('culture-text-input').value.trim();
+    if (!text) return;
+    const btn = document.getElementById('culture-modal-save');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    await fetch('/api/candidate/culture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw_text: text }),
+    });
+    document.getElementById('culture-text-input').value = '';
+    btn.disabled = false; btn.textContent = '+ Add Entry';
+    await loadCultureEntries();
+  });
+
+  document.getElementById('culture-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.add('hidden');
+  });
+
+  // ── Application Package Drawer ─────────────────────────────
+
+  let _pkgJobId = null;
+  let _pkgPollTimer = null;
+
+  function openPkgDrawer(jobId) {
+    _pkgJobId = jobId;
+    const entry = ALL_ENTRIES.find(e => e.job_id === jobId);
+    const meta = entry ? `${entry.company || ''} — ${entry.title || ''}` : jobId;
+    document.getElementById('pkg-job-meta').textContent = meta;
+    document.getElementById('pkg-drawer-overlay').classList.add('open');
+    document.getElementById('pkg-drawer').classList.add('open');
+    document.getElementById('pkg-gen-status').textContent = '';
+    loadPackage(jobId);
+  }
+
+  function closePkgDrawer() {
+    document.getElementById('pkg-drawer-overlay').classList.remove('open');
+    document.getElementById('pkg-drawer').classList.remove('open');
+    if (_pkgPollTimer) clearInterval(_pkgPollTimer);
+    _pkgJobId = null;
+  }
+
+  document.getElementById('pkg-drawer-close').addEventListener('click', closePkgDrawer);
+  document.getElementById('pkg-drawer-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closePkgDrawer();
+  });
+
+  async function loadPackage(jobId) {
+    const data = await fetch(`/api/pipeline/${encodeURIComponent(jobId)}/package`).then(r => r.json());
+    renderPackage(data);
+  }
+
+  function renderPackage(data) {
+    const body    = document.getElementById('pkg-drawer-body');
+    const genBtn  = document.getElementById('pkg-gen-btn');
+    const dlBtn   = document.getElementById('pkg-download-btn');
+    const statusMsg = document.getElementById('pkg-status-msg');
+
+    if (!data || data.status === 'none' || data.status === 'no_resume') {
+      body.innerHTML = `<div class="pkg-status-msg">${data.status === 'no_resume' ? 'Upload a resume first to generate packages.' : 'Click Generate to create your application package.'}</div>`;
+      genBtn.disabled = false; genBtn.textContent = '✨ Generate';
+      dlBtn.style.display = 'none';
+      return;
+    }
+
+    if (data.status === 'processing') {
+      body.innerHTML = `<div class="pkg-status-msg">⏳ Generating package… this takes 15-30 seconds.</div>`;
+      genBtn.disabled = true; genBtn.textContent = '⏳ Generating…';
+      dlBtn.style.display = 'none';
+      return;
+    }
+
+    // Done — render sections
+    genBtn.disabled = false; genBtn.textContent = '↺ Regenerate';
+    dlBtn.style.display = '';
+    let html = '';
+
+    if (data.job_translation) {
+      html += section('What This Role Actually Is', `<div class="pkg-text">${escHtml(data.job_translation)}</div>`);
+    }
+
+    if (data.culture_signals) {
+      const cs = data.culture_signals;
+      const score = data.culture_score ?? cs.score ?? '?';
+      const verdict = cs.verdict || '';
+      const chips = [
+        ...(cs.green || []).map(s => `<span class="chip-green">🟢 ${escHtml(s)}</span>`),
+        ...(cs.yellow || []).map(s => `<span class="chip-yellow">🟡 ${escHtml(s)}</span>`),
+        ...(cs.red || []).map(s => `<span class="chip-red">🔴 ${escHtml(s)}</span>`),
+      ].join('');
+      html += section(`Culture Fit [${score}/100]`, `
+        <div style="font-size:0.85rem;margin-bottom:8px;color:#374151">${escHtml(verdict)}</div>
+        <div class="pkg-chips">${chips}</div>`);
+    }
+
+    if (Array.isArray(data.story_matches) && data.story_matches.length) {
+      const storyHtml = data.story_matches.map(s => `
+        <div class="story-match">
+          <div class="story-match-id">[${escHtml(s.story_id || '')}] ${escHtml(s.competency || '')}</div>
+          <div class="story-match-bullet">• ${escHtml(s.bullet || '')}</div>
+          <button class="copy-btn" onclick="copyText(this, ${JSON.stringify(s.bullet || '')})">⎘ Copy bullet</button>
+        </div>`).join('');
+      html += section('Tailored Resume Bullets', storyHtml);
+    }
+
+    if (data.ats_gap) {
+      const ats = data.ats_gap;
+      const score = ats.score ?? '?';
+      const present = (ats.present || []).map(k => `<span class="chip-green">${escHtml(k)}</span>`).join('');
+      const missing = (ats.missing || []).map(k => `<span class="chip-yellow">${escHtml(k)}</span>`).join('');
+      html += section(`ATS Keywords [${score}% coverage]`, `
+        ${present ? `<div style="margin-bottom:6px"><span style="font-size:0.72rem;color:#9ca3af;font-weight:600">PRESENT &nbsp;</span><div class="pkg-chips" style="display:inline-flex">${present}</div></div>` : ''}
+        ${missing ? `<div><span style="font-size:0.72rem;color:#9ca3af;font-weight:600">MISSING &nbsp;</span><div class="pkg-chips" style="display:inline-flex">${missing}</div></div>` : ''}`);
+    }
+
+    if (data.why_company) {
+      html += section('Why This Company', `
+        <textarea class="pkg-textarea" id="pkg-why-company">${escHtml(data.why_company)}</textarea>
+        <button class="copy-btn" onclick="copyField('pkg-why-company', this)">⎘ Copy</button>`);
+    }
+
+    if (data.value_prop) {
+      html += section('Value Prop / Cover Letter', `
+        <textarea class="pkg-textarea" id="pkg-value-prop">${escHtml(data.value_prop)}</textarea>
+        <button class="copy-btn" onclick="copyField('pkg-value-prop', this)">⎘ Copy</button>`);
+    }
+
+    body.innerHTML = html || '<div class="pkg-status-msg">Package generated — no content available.</div>';
+
+    // Update culture score in ALL_ENTRIES
+    if (data.culture_score != null && _pkgJobId) {
+      const entry = ALL_ENTRIES.find(e => e.job_id === _pkgJobId);
+      if (entry) { entry.culture_score = data.culture_score; render(); }
+    }
+  }
+
+  function section(title, content) {
+    return `<div class="pkg-section"><div class="pkg-section-title">${escHtml(title)}</div>${content}</div>`;
+  }
+
+  function copyText(btn, text) {
+    navigator.clipboard.writeText(text).then(() => {
+      btn.textContent = '✓ Copied'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '⎘ Copy bullet'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  function copyField(id, btn) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    navigator.clipboard.writeText(el.value).then(() => {
+      btn.textContent = '✓ Copied'; btn.classList.add('copied');
+      setTimeout(() => { btn.textContent = '⎘ Copy'; btn.classList.remove('copied'); }, 2000);
+    });
+  }
+
+  document.getElementById('pkg-gen-btn').addEventListener('click', async () => {
+    if (!_pkgJobId) return;
+    const btn = document.getElementById('pkg-gen-btn');
+    btn.disabled = true; btn.textContent = '⏳ Generating…';
+    document.getElementById('pkg-gen-status').textContent = '';
+    await fetch(`/api/pipeline/${encodeURIComponent(_pkgJobId)}/package`, { method: 'POST' });
+    // Poll until done
+    const jobId = _pkgJobId;
+    if (_pkgPollTimer) clearInterval(_pkgPollTimer);
+    _pkgPollTimer = setInterval(async () => {
+      if (_pkgJobId !== jobId) { clearInterval(_pkgPollTimer); return; }
+      const data = await fetch(`/api/pipeline/${encodeURIComponent(jobId)}/package`).then(r => r.json());
+      if (data.status !== 'processing') {
+        clearInterval(_pkgPollTimer);
+        btn.disabled = false; btn.textContent = '↺ Regenerate';
+        renderPackage(data);
+      }
+    }, 3000);
+    renderPackage({ status: 'processing' });
+  });
+
+  document.getElementById('pkg-download-btn').addEventListener('click', () => {
+    if (!_pkgJobId) return;
+    window.location.href = `/api/pipeline/${encodeURIComponent(_pkgJobId)}/package.txt`;
+  });
+
+  // ── Job Coach Chat Drawer ──────────────────────────────────
+
+  let _coachJobId  = null;
+  let _coachMessages = [];  // [{role, content}]
+
+  function openCoachDrawer(jobId) {
+    _coachJobId = jobId;
+    _coachMessages = [];
+    const entry = ALL_ENTRIES.find(e => e.job_id === jobId);
+    const meta = entry ? `${entry.company || ''} — ${entry.title || ''}` : jobId;
+    document.getElementById('coach-job-meta').textContent = meta;
+    document.getElementById('coach-chat-messages').innerHTML = '';
+    document.getElementById('coach-chat-input').value = '';
+    document.getElementById('coach-drawer-overlay').classList.add('open');
+    document.getElementById('coach-drawer').classList.add('open');
+    // Opening greeting
+    appendCoachMsg('assistant', `Hi! I'm your coach for this role. I can help you:\n• Decode this JD and identify what they're really looking for\n• Match your stories to the key competencies\n• Prep practice interview questions\n• Draft your "why this company" answer\n\nWhat would you like to work on?`);
+  }
+
+  function closeCoachDrawer() {
+    document.getElementById('coach-drawer-overlay').classList.remove('open');
+    document.getElementById('coach-drawer').classList.remove('open');
+    _coachJobId = null;
+    _coachMessages = [];
+  }
+
+  document.getElementById('coach-drawer-close').addEventListener('click', closeCoachDrawer);
+  document.getElementById('coach-drawer-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeCoachDrawer();
+  });
+
+  function appendCoachMsg(role, text) {
+    const container = document.getElementById('coach-chat-messages');
+    const div = document.createElement('div');
+    div.className = `chat-msg ${role}`;
+    div.innerHTML = `<div class="chat-bubble">${escHtml(text)}</div>`;
+    container.appendChild(div);
+    container.scrollTop = container.scrollHeight;
+  }
+
+  async function sendCoachMessage() {
+    const input = document.getElementById('coach-chat-input');
+    const text = input.value.trim();
+    if (!text || !_coachJobId) return;
+
+    input.value = '';
+    appendCoachMsg('user', text);
+    _coachMessages.push({ role: 'user', content: text });
+
+    const sendBtn = document.getElementById('coach-send-btn');
+    sendBtn.disabled = true;
+    document.getElementById('coach-thinking').style.display = 'block';
+
+    try {
+      const resp = await fetch(`/api/coach/chat/${encodeURIComponent(_coachJobId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: _coachMessages }),
+      });
+      const data = await resp.json();
+      const reply = data.message || '(no response)';
+      _coachMessages.push({ role: 'assistant', content: reply });
+      appendCoachMsg('assistant', reply);
+      if (data.saved_story_id) {
+        appendCoachMsg('assistant', `✅ Story saved to your storybank as ${data.saved_story_id}.`);
+      }
+    } catch (err) {
+      appendCoachMsg('assistant', 'Sorry, something went wrong. Please try again.');
+    } finally {
+      sendBtn.disabled = false;
+      document.getElementById('coach-thinking').style.display = 'none';
+    }
+  }
+
+  document.getElementById('coach-send-btn').addEventListener('click', sendCoachMessage);
+  document.getElementById('coach-chat-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCoachMessage(); }
+  });
+
+  // ── Pipeline table click delegation (add new actions) ─────
+
+  document.getElementById('pipeline-tbody').addEventListener('click', async e => {
+    const pkgBtn = e.target.closest('[data-action="open-pkg"]');
+    if (pkgBtn) { openPkgDrawer(pkgBtn.dataset.jobId); return; }
+
+    const coachBtn = e.target.closest('[data-action="open-coach"]');
+    if (coachBtn) { openCoachDrawer(coachBtn.dataset.jobId); return; }
+  }, true);  // capture phase so it fires before the existing click handler
 
   load();
 </script>
