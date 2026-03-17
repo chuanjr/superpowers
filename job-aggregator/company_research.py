@@ -3,7 +3,7 @@
 Flow:
   1. Normalize company name → cache key
   2. Check company_culture_cache — return if hit
-  3. On cache miss: search DDG HTML, extract snippets
+  3. On cache miss: search DDG (English + Chinese), optionally scrape 104 company page
   4. Claude Haiku parses snippets → structured culture profile
   5. Store in cache (never expires; manual refresh via force=True)
 """
@@ -79,9 +79,8 @@ class _SnippetParser(HTMLParser):
                 pass
 
 
-def search_company_culture_snippets(company: str) -> list[str]:
-    """Search DuckDuckGo for company culture snippets. Returns up to 10 text snippets."""
-    query = f'"{company}" work culture values employees glassdoor'
+def _ddg_search(query: str) -> list[str]:
+    """Fetch up to 10 snippets from DuckDuckGo HTML search."""
     params = urlencode({"q": query})
     url = f"https://html.duckduckgo.com/html/?{params}"
     headers = {
@@ -90,7 +89,7 @@ def search_company_culture_snippets(company: str) -> list[str]:
             "AppleWebKit/537.36 (KHTML, like Gecko) "
             "Chrome/120.0.0.0 Safari/537.36"
         ),
-        "Accept-Language": "en-US,en;q=0.9",
+        "Accept-Language": "zh-TW,zh;q=0.9,en-US;q=0.8,en;q=0.7",
     }
     req = Request(url, headers=headers)
     try:
@@ -98,10 +97,68 @@ def search_company_culture_snippets(company: str) -> list[str]:
             html = resp.read().decode("utf-8", errors="ignore")
     except URLError:
         return []
-
     parser = _SnippetParser()
     parser.feed(html)
     return parser.snippets[:10]
+
+
+def search_company_culture_snippets(company: str) -> list[str]:
+    """Search DuckDuckGo (English) for company culture snippets."""
+    return _ddg_search(f'"{company}" work culture values employees glassdoor')
+
+
+def search_company_culture_snippets_zh(company: str) -> list[str]:
+    """Search DuckDuckGo (Chinese) for company culture snippets — 職場天眼通, Glassdoor, 104."""
+    return _ddg_search(f'"{company}" 工作環境 員工評價 職場天眼通 glassdoor 104')
+
+
+# ── 104.com.tw company info ───────────────────────────────────────────────────
+
+def _extract_104_job_id(url: str) -> str | None:
+    """Extract job ID from a 104.com.tw job URL."""
+    m = re.search(r"104\.com\.tw/job/([A-Za-z0-9]+)", url)
+    return m.group(1) if m else None
+
+
+def fetch_104_company_info(job_url: str) -> list[str]:
+    """Fetch company description from 104's job content API. Returns text snippets."""
+    job_id = _extract_104_job_id(job_url)
+    if not job_id:
+        return []
+    api_url = f"https://www.104.com.tw/job/ajax/content/{job_id}"
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/120.0.0.0 Safari/537.36"
+        ),
+        "Referer": "https://www.104.com.tw/",
+        "Accept": "application/json",
+    }
+    req = Request(api_url, headers=headers)
+    try:
+        with urlopen(req, timeout=15) as resp:
+            data = json.loads(resp.read().decode("utf-8", errors="ignore"))
+    except Exception:
+        return []
+
+    snippets: list[str] = []
+    company = data.get("data", {}).get("company", {})
+    profile = company.get("profile", {})
+
+    intro = profile.get("intro", "").strip()
+    if intro:
+        snippets.append(f"[104公司介紹] {intro[:800]}")
+
+    product = profile.get("product", "").strip()
+    if product:
+        snippets.append(f"[104產品服務] {product[:400]}")
+
+    welfare = data.get("data", {}).get("welfare", {}).get("welfare", "").strip()
+    if welfare:
+        snippets.append(f"[104福利制度] {welfare[:400]}")
+
+    return snippets
 
 
 # ── Claude Haiku parsing ───────────────────────────────────────────────────────
@@ -113,6 +170,7 @@ def parse_company_culture_sync(company: str, snippets: list[str]) -> dict:
 
     prompt = f"""You are analyzing company culture for a job candidate.
 Based on these search snippets about {company}, extract structured culture signals.
+Snippets may be in English or Chinese (Traditional/Simplified) — handle both.
 Return ONLY valid JSON:
 {{
   "values": ["<core value or principle>"],
@@ -123,7 +181,7 @@ Return ONLY valid JSON:
 }}
 
 If snippets are insufficient or not about company culture, return minimal info with what's available.
-Keep each list to 3-5 items max.
+Keep each list to 3-5 items max. Write the output in the same language as the majority of the input snippets.
 
 Company: {company}
 Search snippets:
@@ -146,7 +204,7 @@ Search snippets:
 
 # ── Main entry point ───────────────────────────────────────────────────────────
 
-def get_or_research_company(company: str, force: bool = False) -> dict | None:
+def get_or_research_company(company: str, job_url: str = "", force: bool = False) -> dict | None:
     """Return cached company culture profile, fetching if not cached or force=True.
 
     Returns parsed dict with keys: values, work_style, green_flags, red_flags, summary.
@@ -166,11 +224,27 @@ def get_or_research_company(company: str, force: bool = False) -> dict | None:
             except (json.JSONDecodeError, TypeError):
                 pass
 
-    snippets = search_company_culture_snippets(company)
+    # Gather snippets from multiple sources
+    snippets: list[str] = []
+
+    # English DDG search
+    snippets += search_company_culture_snippets(company)
+
+    # Chinese DDG search (covers 職場天眼通, Glassdoor TW, 104 reviews)
+    zh_snippets = search_company_culture_snippets_zh(company)
+    # Avoid exact duplicates
+    existing = set(snippets)
+    snippets += [s for s in zh_snippets if s not in existing]
+
+    # 104-specific company page (if job URL is from 104)
+    if job_url and "104.com.tw" in job_url:
+        job104_snippets = fetch_104_company_info(job_url)
+        snippets = job104_snippets + snippets  # 104 info goes first (most relevant)
+
     if not snippets:
         return None
 
-    parsed = parse_company_culture_sync(company, snippets)
+    parsed = parse_company_culture_sync(company, snippets[:15])
     upsert_company_culture_cache(
         company_key, company,
         json.dumps(snippets), json.dumps(parsed),

@@ -350,7 +350,9 @@ async def generate_package(job_id: str, resume_id: int,
 
     # Fetch company culture profile (cached; non-blocking on failure)
     try:
-        company_culture = await asyncio.to_thread(get_or_research_company, company)
+        company_culture = await asyncio.to_thread(
+            get_or_research_company, company, job.get("url") or ""
+        )
     except Exception:
         company_culture = None
 

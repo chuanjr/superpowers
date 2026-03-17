@@ -1096,7 +1096,10 @@
             await loadJobs();
           }
           if (data.error) btn.textContent = '⟳ Error';
-          if (data.cakeresume_auth_needed) showCakeAuthModal();
+          if (data.cakeresume_auth_needed) {
+            if (document.getElementById('cake-auth-modal').classList.contains('hidden'))
+              showCakeAuthModal();
+          }
         }
       } catch(e) {}
     }, 3000);

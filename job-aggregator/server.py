@@ -864,7 +864,8 @@ async def generate_review_summary(job_id: str, background_tasks: BackgroundTasks
             try:
                 from company_research import get_or_research_company
                 company_culture = await asyncio.to_thread(
-                    get_or_research_company, job.get("company") or ""
+                    get_or_research_company, job.get("company") or "",
+                    job.get("url") or "",
                 )
             except Exception:
                 pass
@@ -994,6 +995,7 @@ async def research_company_culture(company_key: str, background_tasks: Backgroun
     import json as _json
     from store import get_company_culture_cache
     company = body.get("company") or company_key.replace("-", " ").title()
+    job_url = body.get("job_url") or ""
     force = bool(body.get("force", False))
 
     if not force:
@@ -1004,7 +1006,7 @@ async def research_company_culture(company_key: str, background_tasks: Backgroun
     async def _run():
         from company_research import get_or_research_company
         try:
-            await asyncio.to_thread(get_or_research_company, company, force=True)
+            await asyncio.to_thread(get_or_research_company, company, job_url, force=True)
         except Exception:
             pass
 
