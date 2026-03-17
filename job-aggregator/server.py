@@ -815,11 +815,21 @@ async def generate_review_summary(job_id: str, background_tasks: BackgroundTasks
             culture_rows = get_all_culture()
             culture_dna = _build_culture_dna_from_rows(culture_rows)
 
+            # Fetch company culture profile (cached)
+            company_culture = None
+            try:
+                from company_research import get_or_research_company
+                company_culture = await asyncio.to_thread(
+                    get_or_research_company, job.get("company") or ""
+                )
+            except Exception:
+                pass
+
             summary = await asyncio.to_thread(
                 generate_triage_summary_sync,
                 resume_summary, job.get("description") or "",
                 job.get("title") or "", job.get("company") or "",
-                culture_dna, explanation,
+                culture_dna, explanation, company_culture,
             )
             _upsert(job_id, resume["id"], _json.dumps(summary), "done")
         except Exception as exc:
@@ -907,6 +917,55 @@ def coach_page() -> FileResponse:
 @app.get("/review")
 def review_page() -> FileResponse:
     return FileResponse(str(_STATIC / "review.html"))
+
+
+# ── Company culture research endpoints ──────────────────────────────────────────
+
+@app.get("/api/company/{company_key}/culture")
+def get_company_culture(company_key: str) -> JSONResponse:
+    """Return cached company culture profile."""
+    import json as _json
+    from store import get_company_culture_cache
+    cached = get_company_culture_cache(company_key)
+    if not cached:
+        return JSONResponse({"status": "none"})
+    parsed = None
+    if cached.get("parsed_json"):
+        try:
+            parsed = _json.loads(cached["parsed_json"])
+        except Exception:
+            pass
+    return JSONResponse({
+        "status": "done",
+        "company": cached.get("company"),
+        "fetched_at": cached.get("fetched_at"),
+        "culture": parsed,
+    })
+
+
+@app.post("/api/company/{company_key}/research")
+async def research_company_culture(company_key: str, background_tasks: BackgroundTasks,
+                                    body: dict = {}) -> JSONResponse:
+    """Trigger company culture research (web search + Claude parse). force=true to refresh."""
+    import json as _json
+    from store import get_company_culture_cache
+    company = body.get("company") or company_key.replace("-", " ").title()
+    force = bool(body.get("force", False))
+
+    if not force:
+        cached = get_company_culture_cache(company_key)
+        if cached and cached.get("parsed_json"):
+            return JSONResponse({"status": "cached", "fetched_at": cached.get("fetched_at")})
+
+    async def _run():
+        from company_research import get_or_research_company
+        try:
+            await asyncio.to_thread(get_or_research_company, company, force=True)
+        except Exception:
+            pass
+
+    background_tasks.add_task(_run)
+    return JSONResponse({"status": "started"})
 
 
 if __name__ == "__main__":

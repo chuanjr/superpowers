@@ -147,6 +147,15 @@ def init_db(path: Path = DB_PATH) -> None:
             created_at  TEXT NOT NULL
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS company_culture_cache (
+            company_key  TEXT PRIMARY KEY,
+            company      TEXT NOT NULL,
+            snippets_json TEXT,
+            parsed_json  TEXT,
+            fetched_at   TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -677,6 +686,40 @@ def get_triage_summary(job_id: str) -> Optional[dict]:
             "SELECT * FROM triage_summaries WHERE job_id = ?", (job_id,)
         ).fetchone()
     return dict(row) if row else None
+
+
+# ── Company culture cache ──────────────────────────────────────────────────────
+
+def get_company_culture_cache(company_key: str) -> Optional[dict]:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM company_culture_cache WHERE company_key = ?", (company_key,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_company_culture_cache(company_key: str, company: str,
+                                  snippets_json: str, parsed_json: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        conn.execute("""
+            INSERT INTO company_culture_cache (company_key, company, snippets_json, parsed_json, fetched_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(company_key) DO UPDATE SET
+                company       = excluded.company,
+                snippets_json = excluded.snippets_json,
+                parsed_json   = excluded.parsed_json,
+                fetched_at    = excluded.fetched_at
+        """, (company_key, company, snippets_json, parsed_json, now))
+        conn.commit()
+
+
+def list_company_culture_cache() -> list[dict]:
+    with _conn() as conn:
+        rows = conn.execute(
+            "SELECT company_key, company, fetched_at FROM company_culture_cache ORDER BY fetched_at DESC"
+        ).fetchall()
+    return [dict(r) for r in rows]
 
 
 # ── Recent feedback (for scoring hints) ────────────────────────────────────────

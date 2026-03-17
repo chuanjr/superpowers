@@ -34,15 +34,17 @@ def _strip_code_fence(text: str) -> str:
 def generate_triage_summary_sync(resume_summary: str, jd_text: str,
                                   job_title: str, company: str,
                                   culture_dna: dict | None = None,
-                                  match_explanation: str | None = None) -> dict:
-    if not jd_text.strip():
-        jd_text = "[Job description not available — assess based on job title and company name only]"
+                                  match_explanation: str | None = None,
+                                  company_culture: dict | None = None) -> dict:
     """Generate a quick career coach brief for triage review.
 
     Single Claude call (haiku, ~10s). Returns structured summary with:
     headline, fit_summary, strengths, gaps, key_challenges, culture_score,
     culture_verdict, recommendation.
     """
+    if not jd_text.strip():
+        jd_text = "[Job description not available — assess based on job title and company name only]"
+
     client = _get_claude()
 
     culture_section = ""
@@ -57,6 +59,19 @@ Candidate culture DNA:
 - Dislikes: {dislikes}
 - Green signals (JD phrases they want to see): {green}
 - Red signals (JD phrases to avoid): {red}"""
+
+    company_section = ""
+    if company_culture:
+        cc_summary = company_culture.get("summary", "")
+        cc_green = ", ".join((company_culture.get("green_flags") or [])[:3])
+        cc_red = ", ".join((company_culture.get("red_flags") or [])[:3])
+        cc_style = company_culture.get("work_style", "")
+        company_section = f"""
+Company culture profile (from web research):
+- Work style: {cc_style}
+- Positive signals: {cc_green}
+- Concerns: {cc_red}
+- Summary: {cc_summary}"""
 
     match_section = ""
     if match_explanation:
@@ -80,7 +95,7 @@ Scoring guidance for recommendation:
 - consider: reasonable fit but notable concerns to weigh
 - pass: significant misalignment (role type, level, culture, industry)
 
-Candidate background: {resume_summary[:500]}{match_section}{culture_section}
+Candidate background: {resume_summary[:500]}{match_section}{culture_section}{company_section}
 
 Job: {job_title} at {company}
 JD:
@@ -121,7 +136,8 @@ Discussion:
 
 # ── Culture scoring ────────────────────────────────────────────────────────────
 
-def score_culture_sync(culture_dna: dict, job_title: str, company: str, jd_text: str) -> dict:
+def score_culture_sync(culture_dna: dict, job_title: str, company: str, jd_text: str,
+                        company_culture: dict | None = None) -> dict:
     """Score a job's culture fit (0-100) and list green/yellow/red signals."""
     client = _get_claude()
     likes_txt    = "\n".join(f"- {l}" for l in culture_dna.get("likes", []))
@@ -129,12 +145,23 @@ def score_culture_sync(culture_dna: dict, job_title: str, company: str, jd_text:
     green_known  = json.dumps(culture_dna.get("green_signals", []))
     red_known    = json.dumps(culture_dna.get("red_signals", []))
 
+    company_section = ""
+    if company_culture:
+        cc_style = company_culture.get("work_style", "")
+        cc_green = ", ".join((company_culture.get("green_flags") or [])[:3])
+        cc_red = ", ".join((company_culture.get("red_flags") or [])[:3])
+        company_section = f"""
+Company culture (from web research):
+- Work style: {cc_style}
+- Known positives: {cc_green}
+- Known concerns: {cc_red}"""
+
     prompt = f"""Score this job's culture fit for a candidate. Return ONLY valid JSON:
 {{
   "score": <0-100>,
-  "green": ["<positive culture signal found in this JD>"],
+  "green": ["<positive culture signal found in this JD or company profile>"],
   "yellow": ["<neutral or ambiguous signal worth noting>"],
-  "red": ["<negative culture signal found in this JD>"],
+  "red": ["<negative culture signal found in this JD or company profile>"],
   "verdict": "<1 concise sentence culture verdict>"
 }}
 
@@ -147,7 +174,7 @@ DISLIKES:
 
 Known green signal patterns: {green_known}
 Known red signal patterns: {red_known}
-
+{company_section}
 Job: {job_title} at {company}
 JD:
 {jd_text[:2000]}"""
@@ -311,6 +338,7 @@ async def generate_package(job_id: str, resume_id: int,
     """Generate a complete application package. Returns the package dict."""
     from store import get_all_culture, get_culture_raw_text_merged, get_stories, upsert_application_package
 
+    from company_research import get_or_research_company
     culture_rows = get_all_culture()
     stories      = get_stories()
 
@@ -319,6 +347,12 @@ async def generate_package(job_id: str, resume_id: int,
         jd_text = "[Job description not available — assess based on job title and company name only]"
     job_title = job.get("title") or ""
     company   = job.get("company") or ""
+
+    # Fetch company culture profile (cached; non-blocking on failure)
+    try:
+        company_culture = await asyncio.to_thread(get_or_research_company, company)
+    except Exception:
+        company_culture = None
 
     parsed         = json.loads(resume.get("parsed_json") or "{}")
     resume_summary = parsed.get("summary") or ""
@@ -356,7 +390,7 @@ async def generate_package(job_id: str, resume_id: int,
         if not merged_dna:
             return None, None
         signals = await asyncio.to_thread(
-            score_culture_sync, merged_dna, job_title, company, jd_text
+            score_culture_sync, merged_dna, job_title, company, jd_text, company_culture
         )
         return merged_dna, signals
 

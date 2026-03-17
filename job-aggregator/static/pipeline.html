@@ -337,6 +337,14 @@
   .culture-badge { font-size: 1rem; cursor: default; }
   .culture-score-txt { font-size: 0.72rem; color: #6b7280; margin-left: 2px; }
 
+  .btn-co-profile {
+    background: none; border: none; cursor: pointer;
+    font-size: 0.85rem; padding: 0 2px; margin-left: 4px;
+    opacity: 0.5; vertical-align: middle;
+    transition: opacity .12s;
+  }
+  .btn-co-profile:hover { opacity: 1; }
+
   /* ── Action buttons in table ── */
   .btn-pkg, .btn-coach-job {
     background: none;
@@ -709,6 +717,26 @@
   </div>
 </div>
 
+<!-- ── Company Profile Drawer ── -->
+<div class="drawer-overlay" id="co-drawer-overlay">
+  <div class="drawer" id="co-drawer">
+    <div class="drawer-header">
+      <div>
+        <h2>🏢 Company Profile</h2>
+        <div class="job-meta" id="co-drawer-meta"></div>
+      </div>
+      <button class="btn-close-drawer" id="co-drawer-close">×</button>
+    </div>
+    <div class="drawer-body" id="co-drawer-body">
+      <div class="pkg-status-msg">Loading…</div>
+    </div>
+    <div class="drawer-footer">
+      <button class="btn-gen" id="co-refresh-btn" style="font-size:0.82rem">🔄 Refresh Data</button>
+      <span class="pkg-status-msg" id="co-fetch-date"></span>
+    </div>
+  </div>
+</div>
+
 <!-- ── Feedback Modal ── -->
 <div class="modal-overlay hidden" id="feedback-modal">
   <div class="modal">
@@ -955,7 +983,10 @@
 
       return `<tr data-job-id="${escHtml(e.job_id)}">
   <td class="col-company">
-    <div class="company-name"><a href="${escHtml(e.url || '#')}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${escHtml(e.company || '—')}</a></div>
+    <div class="company-name">
+      <a href="${escHtml(e.url || '#')}" target="_blank" rel="noopener" style="color:inherit;text-decoration:none">${escHtml(e.company || '—')}</a>
+      <button class="btn-co-profile" onclick="openCoProfile(event,'${escHtml(e.company || '')}','${escHtml(e.job_id)}')" title="Company Profile">🏢</button>
+    </div>
     <div class="role-name">${escHtml(e.title || '')}</div>
   </td>
   <td>${marketTag}</td>
@@ -1383,6 +1414,114 @@
   document.getElementById('coach-drawer-overlay').addEventListener('click', e => {
     if (e.target === e.currentTarget) closeCoachDrawer();
   });
+
+  // ── Company Profile Drawer ──────────────────────────────────
+
+  let _coCompany = null;
+  let _coKey = null;
+
+  function _normalizeCoKey(company) {
+    return company.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  async function openCoProfile(event, company, jobId) {
+    if (event) event.stopPropagation();
+    if (!company) return;
+    _coCompany = company;
+    _coKey = _normalizeCoKey(company);
+    document.getElementById('co-drawer-meta').textContent = company;
+    document.getElementById('co-drawer-overlay').classList.add('open');
+    document.getElementById('co-drawer').classList.add('open');
+    await loadCoProfile(false);
+  }
+
+  function closeCoProfile() {
+    document.getElementById('co-drawer-overlay').classList.remove('open');
+    document.getElementById('co-drawer').classList.remove('open');
+    _coCompany = null; _coKey = null;
+  }
+
+  async function loadCoProfile(force) {
+    const body = document.getElementById('co-drawer-body');
+    const fetchDate = document.getElementById('co-fetch-date');
+    body.innerHTML = `<div class="pkg-status-msg">⏳ Loading company data…</div>`;
+    fetchDate.textContent = '';
+
+    if (force) {
+      await fetch(`/api/company/${encodeURIComponent(_coKey)}/research`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({company: _coCompany, force: true}),
+      });
+      // Poll until done
+      let tries = 0;
+      while (tries < 20) {
+        await new Promise(r => setTimeout(r, 1500));
+        const r = await fetch(`/api/company/${encodeURIComponent(_coKey)}/culture`).then(r => r.json());
+        if (r.status === 'done') { renderCoProfile(r); return; }
+        tries++;
+      }
+      body.innerHTML = `<div class="pkg-status-msg" style="color:#dc2626">Could not fetch company data.</div>`;
+      return;
+    }
+
+    const data = await fetch(`/api/company/${encodeURIComponent(_coKey)}/culture`).then(r => r.json());
+    if (data.status === 'none') {
+      // Trigger research automatically on first open
+      body.innerHTML = `<div class="pkg-status-msg">🔍 Searching for company culture data…</div>`;
+      await fetch(`/api/company/${encodeURIComponent(_coKey)}/research`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({company: _coCompany}),
+      });
+      let tries = 0;
+      while (tries < 20) {
+        await new Promise(r => setTimeout(r, 1500));
+        const r = await fetch(`/api/company/${encodeURIComponent(_coKey)}/culture`).then(r => r.json());
+        if (r.status === 'done') { renderCoProfile(r); return; }
+        tries++;
+      }
+      body.innerHTML = `<div class="pkg-status-msg" style="color:#dc2626">Could not fetch company data.</div>`;
+    } else {
+      renderCoProfile(data);
+    }
+  }
+
+  function renderCoProfile(data) {
+    const body = document.getElementById('co-drawer-body');
+    const fetchDate = document.getElementById('co-fetch-date');
+    const c = data.culture || {};
+
+    if (!c || Object.keys(c).length === 0) {
+      body.innerHTML = `<div class="pkg-status-msg">No culture data found for this company.</div>`;
+      return;
+    }
+
+    const valuesHtml = (c.values || []).map(v =>
+      `<span class="chip-yellow" style="font-size:0.75rem">${escHtml(v)}</span>`).join('');
+    const greenHtml = (c.green_flags || []).map(g =>
+      `<div style="font-size:0.82rem;color:#166534;margin-bottom:4px">🟢 ${escHtml(g)}</div>`).join('');
+    const redHtml = (c.red_flags || []).map(r =>
+      `<div style="font-size:0.82rem;color:#991b1b;margin-bottom:4px">🔴 ${escHtml(r)}</div>`).join('');
+
+    body.innerHTML = `
+      ${c.summary ? `<p style="font-size:0.85rem;color:#374151;line-height:1.5;margin-bottom:16px">${escHtml(c.summary)}</p>` : ''}
+      ${c.work_style ? `<div style="font-size:0.82rem;color:#4b5563;margin-bottom:16px"><strong>Work style:</strong> ${escHtml(c.work_style)}</div>` : ''}
+      ${valuesHtml ? `<div style="margin-bottom:16px"><div style="font-size:0.72rem;font-weight:600;color:#9ca3af;margin-bottom:6px">VALUES</div><div class="pkg-chips">${valuesHtml}</div></div>` : ''}
+      ${greenHtml ? `<div style="margin-bottom:12px"><div style="font-size:0.72rem;font-weight:600;color:#9ca3af;margin-bottom:6px">GREEN FLAGS</div>${greenHtml}</div>` : ''}
+      ${redHtml ? `<div><div style="font-size:0.72rem;font-weight:600;color:#9ca3af;margin-bottom:6px">RED FLAGS</div>${redHtml}</div>` : ''}
+    `;
+    if (data.fetched_at) {
+      const d = new Date(data.fetched_at);
+      fetchDate.textContent = `Fetched ${d.toLocaleDateString()}`;
+    }
+  }
+
+  document.getElementById('co-drawer-close').addEventListener('click', closeCoProfile);
+  document.getElementById('co-drawer-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) closeCoProfile();
+  });
+  document.getElementById('co-refresh-btn').addEventListener('click', () => loadCoProfile(true));
 
   function appendCoachMsg(role, text) {
     const container = document.getElementById('coach-chat-messages');
