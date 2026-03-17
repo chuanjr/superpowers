@@ -400,6 +400,7 @@ def get_pipeline() -> list[dict]:
                 AND rjm.resume_id = p.resume_id
             LEFT JOIN application_packages ap ON ap.job_id = p.job_id
                 AND ap.resume_id = p.resume_id
+            WHERE p.status != 'triage'
             ORDER BY COALESCE(rjm.score, CAST(rjm.similarity * 100 AS INTEGER)) DESC NULLS LAST
         """).fetchall()
     result = []

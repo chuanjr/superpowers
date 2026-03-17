@@ -42,6 +42,8 @@ class _LinkExtractor(HTMLParser):
         self._current_company = ""
         # most recently seen img src (company logo before job link)
         self._pending_logo = ""
+        # index of the last job added — for free-text company fallback
+        self._last_job_idx: int | None = None
 
     def handle_starttag(self, tag, attrs):
         if tag == "img":
@@ -54,8 +56,19 @@ class _LinkExtractor(HTMLParser):
 
     def handle_data(self, data):
         text = data.strip()
-        if not text or not self._current_href:
+        if not text:
             return
+
+        # Free text node (outside any anchor) — may be company name after a job title link
+        if not self._current_href:
+            if (self._last_job_idx is not None
+                    and not _is_ui_text(text)
+                    and 2 < len(text) < 100):
+                job = self.jobs[self._last_job_idx]
+                if not job["company"] and text != job["title"]:
+                    job["company"] = _clean_company(text)
+            return
+
         href = self._current_href
 
         # LinkedIn company profile link → remember company name for upcoming jobs
@@ -73,6 +86,7 @@ class _LinkExtractor(HTMLParser):
                 canonical = _normalize_url(href)
                 if canonical not in self._seen_urls:
                     self._seen_urls[canonical] = len(self.jobs)
+                    self._last_job_idx = len(self.jobs)
                     self.jobs.append({
                         "title": parts[0].strip(),
                         "company": parts[1].strip() if len(parts) > 1 else "",
@@ -85,6 +99,7 @@ class _LinkExtractor(HTMLParser):
                 canonical = _normalize_url(href)
                 if canonical not in self._seen_urls:
                     self._seen_urls[canonical] = len(self.jobs)
+                    self._last_job_idx = len(self.jobs)
                     self.jobs.append({
                         "title": text,
                         "company": self._current_company,
@@ -102,6 +117,7 @@ class _LinkExtractor(HTMLParser):
             canonical = _normalize_url(href)
             if canonical not in self._seen_urls:
                 self._seen_urls[canonical] = len(self.jobs)
+                self._last_job_idx = len(self.jobs)
                 self.jobs.append({
                     "title": text,
                     "company": "",
