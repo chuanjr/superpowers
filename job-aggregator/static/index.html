@@ -474,6 +474,21 @@
   <a href="/pipeline" id="pipeline-nav">Pipeline <span id="pipeline-count"></span></a>
 </header>
 
+<!-- ── CakeResume Auth Modal ── -->
+<div class="modal-overlay hidden" id="cake-auth-modal">
+  <div class="modal" style="max-width:420px">
+    <h3>🍰 CakeResume Session Expired</h3>
+    <p style="margin:12px 0 8px;color:#6b7280;font-size:0.88rem">
+      Your CakeResume login has expired. Click <strong>Re-authenticate</strong> to open a browser window and log back in.
+    </p>
+    <p id="cake-auth-status" style="font-size:0.82rem;color:#6b7280;min-height:1.2em"></p>
+    <div class="modal-btns" style="margin-top:16px">
+      <button class="btn-cancel" id="cake-auth-dismiss">Dismiss</button>
+      <button class="btn-confirm" id="cake-auth-btn">🔑 Re-authenticate</button>
+    </div>
+  </div>
+</div>
+
 <!-- ── Import URL Modal ── -->
 <div class="modal-overlay hidden" id="import-modal">
   <div class="modal">
@@ -1081,12 +1096,63 @@
             await loadJobs();
           }
           if (data.error) btn.textContent = '⟳ Error';
+          if (data.cakeresume_auth_needed) showCakeAuthModal();
         }
       } catch(e) {}
     }, 3000);
   }
 
   document.getElementById('btn-refresh').addEventListener('click', startRefresh);
+
+  // ── CakeResume Auth Modal ──────────────────────────────────
+
+  function showCakeAuthModal() {
+    document.getElementById('cake-auth-status').textContent = '';
+    document.getElementById('cake-auth-btn').disabled = false;
+    document.getElementById('cake-auth-btn').textContent = '🔑 Re-authenticate';
+    document.getElementById('cake-auth-modal').classList.remove('hidden');
+  }
+
+  document.getElementById('cake-auth-dismiss').addEventListener('click', () => {
+    document.getElementById('cake-auth-modal').classList.add('hidden');
+  });
+
+  document.getElementById('cake-auth-btn').addEventListener('click', async () => {
+    const btn = document.getElementById('cake-auth-btn');
+    const status = document.getElementById('cake-auth-status');
+    btn.disabled = true;
+    btn.textContent = '⏳ Opening browser…';
+    status.textContent = 'A browser window will open — log in to CakeResume, then wait.';
+    status.style.color = '#6b7280';
+
+    await fetch('/api/auth/cakeresume', { method: 'POST' });
+
+    // Poll for completion
+    const poll = setInterval(async () => {
+      try {
+        const data = await fetch('/api/auth/cakeresume/status').then(r => r.json());
+        if (data.done) {
+          clearInterval(poll);
+          status.textContent = '✅ Login successful! Session saved.';
+          status.style.color = '#166534';
+          btn.textContent = '✓ Done';
+          setTimeout(() => {
+            document.getElementById('cake-auth-modal').classList.add('hidden');
+          }, 2000);
+        } else if (data.error) {
+          clearInterval(poll);
+          status.textContent = `❌ Error: ${data.error}`;
+          status.style.color = '#dc2626';
+          btn.disabled = false;
+          btn.textContent = '🔑 Re-authenticate';
+        } else if (!data.running) {
+          clearInterval(poll);
+          btn.disabled = false;
+          btn.textContent = '🔑 Re-authenticate';
+        }
+      } catch(e) {}
+    }, 2000);
+  });
 
   // ── URL Import ────────────────────────────────────────────
   let _importParsed = null;

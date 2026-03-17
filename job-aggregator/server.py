@@ -175,7 +175,8 @@ def pipeline_remove(job_id: str) -> JSONResponse:
 
 # ── Refresh jobs endpoint ──────────────────────────────────────────────────────
 
-_refresh_state: dict = {"running": False, "new_count": None, "error": None}
+_refresh_state: dict = {"running": False, "new_count": None, "error": None, "cakeresume_auth_needed": False}
+_cake_auth_state: dict = {"running": False, "done": False, "error": None}
 
 
 @app.post("/api/jobs/refresh")
@@ -190,11 +191,17 @@ def jobs_refresh() -> JSONResponse:
         from store import get_existing_ids as _get_ids
         before_ids = _get_ids()
         try:
-            subprocess.run(
+            result = subprocess.run(
                 [sys.executable, str(_ROOT / "main.py")],
                 cwd=str(_ROOT),
                 timeout=300,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                text=True,
             )
+            output = result.stdout or ""
+            if "[WARN] CakeResume" in output and "login may have expired" in output:
+                _refresh_state["cakeresume_auth_needed"] = True
             after_ids = _get_ids()
             new_ids = after_ids - before_ids
             _refresh_state["new_count"] = len(new_ids)
@@ -224,6 +231,43 @@ def jobs_refresh_status() -> JSONResponse:
         "running": _refresh_state["running"],
         "new_count": _refresh_state["new_count"],
         "error": _refresh_state["error"],
+        "cakeresume_auth_needed": _refresh_state.get("cakeresume_auth_needed", False),
+    })
+
+
+@app.post("/api/auth/cakeresume")
+def start_cakeresume_auth() -> JSONResponse:
+    """Trigger the CakeResume re-authentication flow (opens browser window)."""
+    if _cake_auth_state["running"]:
+        return JSONResponse({"status": "already_running"})
+    _cake_auth_state["running"] = True
+    _cake_auth_state["done"] = False
+    _cake_auth_state["error"] = None
+    _refresh_state["cakeresume_auth_needed"] = False
+
+    def _run():
+        try:
+            subprocess.run(
+                [sys.executable, str(_ROOT / "setup_cakeresume_auth.py"), "--auto"],
+                cwd=str(_ROOT),
+                timeout=360,
+            )
+            _cake_auth_state["done"] = True
+        except Exception as exc:
+            _cake_auth_state["error"] = str(exc)
+        finally:
+            _cake_auth_state["running"] = False
+
+    threading.Thread(target=_run, daemon=True).start()
+    return JSONResponse({"status": "started"})
+
+
+@app.get("/api/auth/cakeresume/status")
+def cakeresume_auth_status() -> JSONResponse:
+    return JSONResponse({
+        "running": _cake_auth_state["running"],
+        "done": _cake_auth_state["done"],
+        "error": _cake_auth_state["error"],
     })
 
 
