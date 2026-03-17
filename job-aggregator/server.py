@@ -26,7 +26,7 @@ from store import (
     get_latest_resume, get_matches,
     add_to_pipeline, get_pipeline, update_pipeline_entry, remove_from_pipeline,
     get_pipeline_job_ids, get_latest_resume_identity,
-    get_job, save_feedback,
+    get_job, save_feedback, update_resume,
 )
 
 app = FastAPI(title="Job Board")
@@ -74,6 +74,7 @@ async def upload_resume(background_tasks: BackgroundTasks, file: UploadFile = Fi
         raise HTTPException(status_code=422, detail=f"Could not extract text from PDF: {exc}")
 
     resume_id = save_resume(filename=file.filename, raw_text=raw_text)
+    update_resume(resume_id, status="processing")
     background_tasks.add_task(process_matching, resume_id, raw_text)
 
     return {"resume_id": resume_id, "status": "processing"}

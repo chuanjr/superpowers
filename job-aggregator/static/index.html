@@ -937,7 +937,7 @@
       clearBtn.style.display = 'none';
       rematchBtn.style.display = 'none';
       if (bestOpt) bestOpt.disabled = true;
-    } else if (RESUME_STATUS === 'processing') {
+    } else if (RESUME_STATUS === 'processing' || RESUME_STATUS === 'pending') {
       el.textContent = 'Analyzing résumé…';
       el.classList.add('processing');
       clearBtn.style.display = 'block';
@@ -976,7 +976,7 @@
       }
       updateResumeUI();
       renderJobs();
-      if (RESUME_STATUS !== 'processing') {
+      if (RESUME_STATUS !== 'processing' && RESUME_STATUS !== 'pending') {
         clearInterval(_pollTimer);
         _pollTimer = null;
       }
