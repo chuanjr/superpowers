@@ -718,9 +718,11 @@
     const resp = await fetch(`/api/review/${encodeURIComponent(jobId)}/summary`, { method: 'POST' });
     if (!resp.ok) return;
 
-    // Poll for result — return a Promise that resolves when done/error
+    // Poll for result — return a Promise that resolves when done/error/timeout
     return new Promise(resolve => {
+      let tries = 0;
       const timer = setInterval(async () => {
+        tries++;
         const data = await fetch(`/api/review/${encodeURIComponent(jobId)}/summary`).then(r => r.json());
         if (data.status === 'done' && data.summary) {
           clearInterval(timer);
@@ -739,7 +741,7 @@
             oldCard.replaceWith(newCard);
           }
           resolve();
-        } else if (data.status === 'error') {
+        } else if (data.status === 'error' || tries >= 40) {
           clearInterval(timer);
           entry.summary_status = 'error';
           resolve();
@@ -976,6 +978,7 @@
         await new Promise(r => setTimeout(r, 1500));
         const r = await fetch(`/api/company/${encodeURIComponent(_coKey)}/culture`).then(r => r.json());
         if (r.status === 'done') { renderCoProfile(r); return true; }
+        if (r.status === 'error') { break; }
       }
       body.innerHTML = `<div style="font-size:0.85rem;color:#dc2626">Could not fetch company data.</div>`;
       return false;

@@ -572,6 +572,7 @@ def list_stories() -> JSONResponse:
 # ── Application package endpoints ───────────────────────────────────────────────
 
 _pkg_tasks: dict = {}  # job_id -> {"running": bool, "error": str|None}
+_co_tasks: dict  = {}  # company_key -> {"running": bool, "error": str|None}
 
 
 @app.get("/api/pipeline/{job_id}/package")
@@ -589,6 +590,12 @@ def get_package(job_id: str) -> JSONResponse:
         if task_state.get("error"):
             return JSONResponse({"status": "error", "error": task_state["error"]})
         return JSONResponse({"status": "none"})
+
+    # Package exists but may be stuck in processing if task errored out
+    if pkg.get("status") in ("processing", "pending"):
+        task_state = _pkg_tasks.get(job_id, {})
+        if task_state.get("error"):
+            return JSONResponse({"status": "error", "error": task_state["error"]})
 
     def _parse(key):
         val = pkg.get(key)
@@ -953,9 +960,9 @@ async def generate_review_summary(job_id: str, background_tasks: BackgroundTasks
     upsert_triage_summary(job_id, resume["id"], "{}", "pending")
 
     async def _run():
-        from application_generator import generate_triage_summary_sync
-        from store import get_all_culture, get_triage_summary as _get, upsert_triage_summary as _upsert
         try:
+            from application_generator import generate_triage_summary_sync
+            from store import get_all_culture, upsert_triage_summary as _upsert
             parsed = _json.loads(resume.get("parsed_json") or "{}")
             resume_summary = parsed.get("summary") or ""
 
@@ -989,7 +996,11 @@ async def generate_review_summary(job_id: str, background_tasks: BackgroundTasks
             )
             _upsert(job_id, resume["id"], _json.dumps(summary), "done")
         except Exception as exc:
-            _upsert(job_id, resume["id"], _json.dumps({"error": str(exc)}), "error")
+            try:
+                from store import upsert_triage_summary as _upsert
+                _upsert(job_id, resume["id"], _json.dumps({"error": str(exc)}), "error")
+            except Exception:
+                pass
         finally:
             _summary_tasks[job_id]["running"] = False
 
@@ -1084,6 +1095,11 @@ def get_company_culture(company_key: str) -> JSONResponse:
     from store import get_company_culture_cache
     cached = get_company_culture_cache(company_key)
     if not cached:
+        task_state = _co_tasks.get(company_key, {})
+        if task_state.get("running"):
+            return JSONResponse({"status": "processing"})
+        if task_state.get("error"):
+            return JSONResponse({"status": "error", "error": task_state["error"]})
         return JSONResponse({"status": "none"})
     parsed = None
     if cached.get("parsed_json"):
@@ -1114,12 +1130,16 @@ async def research_company_culture(company_key: str, background_tasks: Backgroun
         if cached and cached.get("parsed_json"):
             return JSONResponse({"status": "cached", "fetched_at": cached.get("fetched_at")})
 
+    _co_tasks[company_key] = {"running": True, "error": None}
+
     async def _run():
         from company_research import get_or_research_company
         try:
             await asyncio.to_thread(get_or_research_company, company, job_url, force=True)
-        except Exception:
-            pass
+        except Exception as exc:
+            _co_tasks[company_key]["error"] = str(exc)
+        finally:
+            _co_tasks[company_key]["running"] = False
 
     background_tasks.add_task(_run)
     return JSONResponse({"status": "started"})
