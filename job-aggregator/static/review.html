@@ -419,12 +419,12 @@
 
 <div class="toolbar">
   <button class="tab active" data-filter="all">All</button>
-  <button class="tab" data-filter="apply" style="border-color:#86efac;color:#15803d">✅ Apply</button>
-  <button class="tab" data-filter="consider" style="border-color:#fde68a;color:#92400e">🤔 Consider</button>
+  <button class="tab" data-filter="apply" style="border-color:#86efac;color:#15803d">Apply</button>
+  <button class="tab" data-filter="consider" style="border-color:#fde68a;color:#92400e">Consider</button>
   <button class="tab" data-filter="80plus">80+ Match</button>
   <div class="spacer"></div>
   <span id="queue-count" style="font-size:0.82rem;color:#9ca3af"></span>
-  <button class="btn-gen-all" id="btn-gen-all">✨ Generate All Briefs</button>
+  <button class="btn-gen-all" id="btn-gen-all">Generate All Briefs</button>
   <span class="sort-label">Sort by</span>
   <select class="sort-sel" id="sort-sel">
     <option value="score-desc">Match score ↓</option>
@@ -798,7 +798,7 @@
     btn.disabled = true; btn.textContent = '⏳ Generating…';
     const toGenerate = ALL_ENTRIES.filter(e => !e.summary_json && e.summary_status !== 'pending');
     await Promise.all(toGenerate.map(e => generateBrief(e.job_id)));
-    btn.disabled = false; btn.textContent = '✨ Generate All Briefs';
+    btn.disabled = false; btn.textContent = 'Generate All Briefs';
   });
 
   // ── Approve / Pass ────────────────────────────────────────────
