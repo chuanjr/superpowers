@@ -212,6 +212,38 @@
     gap: 12px; margin-bottom: 14px;
   }
   @media (max-width: 700px) { .brief-grid { grid-template-columns: 1fr; } }
+
+  /* ── Mobile layout ── */
+  @media (max-width: 768px) {
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+      padding: 20px 16px 12px;
+      gap: 12px;
+    }
+    .header-nav {
+      width: 100%;
+      justify-content: flex-start;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .toolbar {
+      padding: 0 16px 16px;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .spacer { display: none; }
+    .btn-gen-all {
+      width: 100%;
+      justify-content: center;
+      order: 10;
+    }
+    .sort-label, .sort-sel { font-size: 0.78rem; }
+    .main-content { padding: 0 16px 48px; }
+    .card-header { padding: 14px 16px 10px; }
+    .card-brief { padding: 14px 16px 0; }
+    .card-actions { padding: 10px 16px 14px; }
+  }
   .brief-block { }
   .brief-block-title {
     font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
