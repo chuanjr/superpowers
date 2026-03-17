@@ -96,7 +96,8 @@ def _embed_sync(text: str, task_type: str) -> list[float]:
 
 
 def _explain_sync(resume_summary: str, job: dict, candidate_industries: list[str] | None = None,
-                  feedback_context: str | None = None) -> tuple[int, str]:
+                  feedback_context: str | None = None,
+                  resume_id: int | None = None) -> tuple[int, str]:
     """Call Claude to score fit (0-100) and write a brief explanation."""
     client = _get_claude()
     jd = (
@@ -109,13 +110,24 @@ def _explain_sync(resume_summary: str, job: dict, candidate_industries: list[str
     feedback_hint = ""
     if feedback_context:
         feedback_hint = f"\n\nIMPORTANT — User feedback on a previous score for this job: {feedback_context}\nAdjust your score accordingly."
+
+    # Include recent pass patterns to improve future scoring accuracy
+    pass_hint = ""
+    if resume_id:
+        from store import get_recent_feedback
+        recent_passes = get_recent_feedback(resume_id, rating="down", limit=5)
+        if recent_passes:
+            reasons = [r["reason"] for r in recent_passes if r.get("reason")]
+            if reasons:
+                pass_hint = f"\n\nRECENT PASS PATTERNS: This candidate recently passed on jobs for these reasons: {'; '.join(set(reasons))}. If this job has similar characteristics, consider scoring lower."
+
     prompt = f"""Rate the fit between this candidate and the job. Return ONLY valid JSON:
 {{"score": <0-100>, "explanation": "<1-2 specific sentences in English>"}}
 
 IMPORTANT SCORING RULES:
 - If the job is for physical/offline goods (signals: 供應鏈, 採購, 庫存, supply chain, procurement, inventory, merchandise, 商品, physical retail, F&B, manufacturing, logistics), and the candidate is a tech/software/digital PM with no such background, score it below 35.
 - If the job title says "Product Manager" but the actual role is supply chain, procurement, or physical merchandise management, treat it as a non-tech role.
-- Only score high (70+) if both the role type AND industry match the candidate's background.{industries_hint}{feedback_hint}
+- Only score high (70+) if both the role type AND industry match the candidate's background.{industries_hint}{feedback_hint}{pass_hint}
 
 Candidate background:
 {resume_summary[:500]}
@@ -219,7 +231,7 @@ async def process_matching(resume_id: int, raw_text: str) -> None:
         for match in _get_matches(resume_id):
             if (match.get("score") or 0) >= 70:
                 add_to_pipeline(match["job_id"], resume_id=resume_id,
-                                status="recommended", verdict="recommend")
+                                status="triage", verdict=None)
 
         update_resume(resume_id, status="done")
 
@@ -258,9 +270,9 @@ async def process_single_job_match(resume_id: int, job_id: str) -> None:
     score, explanation = await asyncio.to_thread(_explain_sync, summary, job, industries)
     upsert_match(resume_id, job_id, similarity=sim, score=score, explanation=explanation)
 
-    # Auto-add if high score
+    # Auto-add to review queue if high score
     if score >= 70:
-        add_to_pipeline(job_id, resume_id=resume_id, status="recommended", verdict="recommend")
+        add_to_pipeline(job_id, resume_id=resume_id, status="triage", verdict=None)
 
 
 # ── Feedback-driven re-scoring ─────────────────────────────────────────────────

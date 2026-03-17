@@ -29,6 +29,69 @@ def _strip_code_fence(text: str) -> str:
     return text.strip()
 
 
+# ── Triage summary (lightweight, single-call career coach brief) ──────────────
+
+def generate_triage_summary_sync(resume_summary: str, jd_text: str,
+                                  job_title: str, company: str,
+                                  culture_dna: dict | None = None,
+                                  match_explanation: str | None = None) -> dict:
+    """Generate a quick career coach brief for triage review.
+
+    Single Claude call (haiku, ~10s). Returns structured summary with:
+    headline, fit_summary, strengths, gaps, key_challenges, culture_score,
+    culture_verdict, recommendation.
+    """
+    client = _get_claude()
+
+    culture_section = ""
+    if culture_dna:
+        likes = ", ".join((culture_dna.get("likes") or [])[:5])
+        dislikes = ", ".join((culture_dna.get("dislikes") or [])[:5])
+        green = ", ".join((culture_dna.get("green_signals") or [])[:5])
+        red = ", ".join((culture_dna.get("red_signals") or [])[:5])
+        culture_section = f"""
+Candidate culture DNA:
+- Likes: {likes}
+- Dislikes: {dislikes}
+- Green signals (JD phrases they want to see): {green}
+- Red signals (JD phrases to avoid): {red}"""
+
+    match_section = ""
+    if match_explanation:
+        match_section = f"\nMatch system explanation: {match_explanation}"
+
+    prompt = f"""You are a senior career coach reviewing a job opportunity for a candidate.
+Give an honest, direct assessment. Return ONLY valid JSON:
+{{
+  "headline": "<8-12 words: key insight about this fit, e.g. 'Strong technical fit; culture flag on ownership model'>",
+  "fit_summary": "<2-3 sentences: overall picture of fit — what aligns and what to watch for>",
+  "strengths": ["<specific strength 1>", "<specific strength 2>", "<specific strength 3>"],
+  "gaps": ["<specific gap 1>", "<specific gap 2>"],
+  "key_challenges": ["<realistic challenge in this role for this candidate>"],
+  "culture_score": <0-100 or null if no culture data>,
+  "culture_verdict": "<1 sentence on culture alignment, or null if no culture data>",
+  "recommendation": "<apply|consider|pass>"
+}}
+
+Scoring guidance for recommendation:
+- apply: strong fit, high confidence worth applying
+- consider: reasonable fit but notable concerns to weigh
+- pass: significant misalignment (role type, level, culture, industry)
+
+Candidate background: {resume_summary[:500]}{match_section}{culture_section}
+
+Job: {job_title} at {company}
+JD:
+{jd_text[:2000]}"""
+
+    msg = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=700,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return json.loads(_strip_code_fence(msg.content[0].text))
+
+
 # ── Culture DNA parsing ────────────────────────────────────────────────────────
 
 def parse_culture_sync(raw_text: str) -> dict:

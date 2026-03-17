@@ -138,6 +138,15 @@ def init_db(path: Path = DB_PATH) -> None:
             UNIQUE(job_id, resume_id)
         )
     """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS triage_summaries (
+            job_id      TEXT PRIMARY KEY,
+            resume_id   INTEGER,
+            summary_json TEXT,
+            status      TEXT NOT NULL DEFAULT 'pending',
+            created_at  TEXT NOT NULL
+        )
+    """)
     conn.commit()
     conn.close()
 
@@ -614,3 +623,75 @@ def upsert_application_package(job_id: str, resume_id: int, **fields) -> None:
                 values,
             )
         conn.commit()
+
+
+# ── Triage ─────────────────────────────────────────────────────────────────────
+
+def get_triage() -> list[dict]:
+    """Return all pipeline entries with status 'triage', joined with job + match score."""
+    with _conn() as conn:
+        rows = conn.execute("""
+            SELECT
+                p.id, p.job_id, p.resume_id, p.status, p.added_at,
+                j.title, j.company, j.location, j.market, j.url, j.logo_url,
+                j.sources, j.description, j.first_seen_at,
+                rjm.score, rjm.similarity, rjm.explanation,
+                ts.summary_json, ts.status AS summary_status,
+                ap.culture_score
+            FROM pipeline p
+            JOIN jobs j ON j.id = p.job_id
+            LEFT JOIN resume_job_matches rjm ON rjm.job_id = p.job_id
+                AND rjm.resume_id = p.resume_id
+            LEFT JOIN triage_summaries ts ON ts.job_id = p.job_id
+            LEFT JOIN application_packages ap ON ap.job_id = p.job_id
+                AND ap.resume_id = p.resume_id
+            WHERE p.status = 'triage'
+            ORDER BY COALESCE(rjm.score, CAST(rjm.similarity * 100 AS INTEGER)) DESC NULLS LAST
+        """).fetchall()
+    result = []
+    for row in rows:
+        d = dict(row)
+        d["sources"] = json.loads(d.get("sources") or "[]")
+        result.append(d)
+    return result
+
+
+def upsert_triage_summary(job_id: str, resume_id: Optional[int],
+                           summary_json: str, status: str = "done") -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        conn.execute("""
+            INSERT INTO triage_summaries (job_id, resume_id, summary_json, status, created_at)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(job_id) DO UPDATE SET
+                resume_id    = excluded.resume_id,
+                summary_json = excluded.summary_json,
+                status       = excluded.status
+        """, (job_id, resume_id, summary_json, status, now))
+        conn.commit()
+
+
+def get_triage_summary(job_id: str) -> Optional[dict]:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM triage_summaries WHERE job_id = ?", (job_id,)
+        ).fetchone()
+    return dict(row) if row else None
+
+
+# ── Recent feedback (for scoring hints) ────────────────────────────────────────
+
+def get_recent_feedback(resume_id: Optional[int], rating: str, limit: int = 5) -> list[dict]:
+    """Return recent feedback entries for a resume, filtered by rating."""
+    with _conn() as conn:
+        if resume_id is not None:
+            rows = conn.execute(
+                "SELECT * FROM feedback WHERE resume_id = ? AND rating = ? ORDER BY created_at DESC LIMIT ?",
+                (resume_id, rating, limit),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT * FROM feedback WHERE rating = ? ORDER BY created_at DESC LIMIT ?",
+                (rating, limit),
+            ).fetchall()
+    return [dict(r) for r in rows]

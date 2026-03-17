@@ -187,15 +187,28 @@ def jobs_refresh() -> JSONResponse:
         _refresh_state["running"] = True
         _refresh_state["error"] = None
         _refresh_state["new_count"] = None
-        before = len(get_all_jobs())
+        from store import get_existing_ids as _get_ids
+        before_ids = _get_ids()
         try:
             subprocess.run(
                 [sys.executable, str(_ROOT / "main.py")],
                 cwd=str(_ROOT),
                 timeout=300,
             )
-            after = len(get_all_jobs())
-            _refresh_state["new_count"] = after - before
+            after_ids = _get_ids()
+            new_ids = after_ids - before_ids
+            _refresh_state["new_count"] = len(new_ids)
+
+            # Auto-score new jobs against the latest resume
+            if new_ids:
+                resume = get_latest_resume()
+                if resume and resume.get("status") == "done":
+                    from resume_matcher import process_single_job_match
+                    for job_id in new_ids:
+                        try:
+                            asyncio.run(process_single_job_match(resume["id"], job_id))
+                        except Exception:
+                            pass  # Don't fail the whole refresh if one job fails
         except Exception as exc:
             _refresh_state["error"] = str(exc)
         finally:
@@ -708,6 +721,147 @@ async def import_stories_from_file(body: dict) -> JSONResponse:
     return JSONResponse({"ok": True, "count": len(stories), "stories": stories})
 
 
+# ── Review queue (triage) endpoints ──────────────────────────────────────────
+
+def _build_culture_dna_from_rows(culture_rows: list) -> dict | None:
+    """Merge all culture entries into a single DNA dict."""
+    import json as _json
+    merged: dict | None = None
+    for row in culture_rows:
+        if row.get("parsed_json"):
+            try:
+                d = _json.loads(row["parsed_json"])
+                if d and not d.get("error"):
+                    if merged is None:
+                        merged = {"likes": [], "dislikes": [], "green_signals": [], "red_signals": []}
+                    for key in ("likes", "dislikes", "green_signals", "red_signals"):
+                        merged[key] = list(dict.fromkeys(merged.get(key, []) + d.get(key, [])))
+                    if d.get("summary"):
+                        merged["summary"] = d["summary"]
+            except Exception:
+                pass
+    return merged
+
+
+@app.get("/api/review")
+def review_list() -> JSONResponse:
+    """Return all jobs in the triage queue, ordered by match score."""
+    import json as _json
+    from store import get_triage
+    entries = get_triage()
+    # Strip description to keep response small
+    for e in entries:
+        e.pop("description", None)
+    return JSONResponse({"entries": entries})
+
+
+_summary_tasks: dict = {}  # job_id -> {"running": bool}
+
+
+@app.post("/api/review/{job_id}/summary")
+async def generate_review_summary(job_id: str, background_tasks: BackgroundTasks) -> JSONResponse:
+    """Generate and cache a triage coach brief for a job."""
+    import json as _json
+    from store import get_triage_summary, upsert_triage_summary, get_all_culture
+
+    # Return cached if available
+    cached = get_triage_summary(job_id)
+    if cached and cached.get("status") == "done":
+        return JSONResponse({"status": "done", "summary": _json.loads(cached["summary_json"] or "null")})
+
+    if _summary_tasks.get(job_id, {}).get("running"):
+        return JSONResponse({"status": "processing"})
+
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+
+    resume = get_latest_resume()
+    if not resume:
+        raise HTTPException(404, "No resume found")
+
+    _summary_tasks[job_id] = {"running": True}
+    upsert_triage_summary(job_id, resume["id"], "{}", "pending")
+
+    async def _run():
+        from application_generator import generate_triage_summary_sync
+        from store import get_all_culture, get_triage_summary as _get, upsert_triage_summary as _upsert
+        try:
+            parsed = _json.loads(resume.get("parsed_json") or "{}")
+            resume_summary = parsed.get("summary") or ""
+
+            # Get existing match explanation if available
+            from store import get_matches
+            matches = get_matches(resume["id"])
+            explanation = next((m["explanation"] for m in matches if m["job_id"] == job_id), None)
+
+            culture_rows = get_all_culture()
+            culture_dna = _build_culture_dna_from_rows(culture_rows)
+
+            summary = await asyncio.to_thread(
+                generate_triage_summary_sync,
+                resume_summary, job.get("description") or "",
+                job.get("title") or "", job.get("company") or "",
+                culture_dna, explanation,
+            )
+            _upsert(job_id, resume["id"], _json.dumps(summary), "done")
+        except Exception as exc:
+            _upsert(job_id, resume["id"], _json.dumps({"error": str(exc)}), "error")
+        finally:
+            _summary_tasks[job_id]["running"] = False
+
+    background_tasks.add_task(_run)
+    return JSONResponse({"status": "started"})
+
+
+@app.get("/api/review/{job_id}/summary")
+def get_review_summary(job_id: str) -> JSONResponse:
+    import json as _json
+    from store import get_triage_summary
+    cached = get_triage_summary(job_id)
+    if not cached:
+        task = _summary_tasks.get(job_id, {})
+        return JSONResponse({"status": "processing" if task.get("running") else "none"})
+    summary = None
+    if cached.get("summary_json"):
+        try:
+            summary = _json.loads(cached["summary_json"])
+        except Exception:
+            pass
+    return JSONResponse({"status": cached.get("status", "done"), "summary": summary})
+
+
+@app.post("/api/review/{job_id}/approve")
+async def review_approve(job_id: str, background_tasks: BackgroundTasks, body: dict = {}) -> JSONResponse:
+    """Move a triage job into the pipeline (status → recommended)."""
+    from store import update_pipeline_entry, save_feedback
+    update_pipeline_entry(job_id, status="recommended", verdict="recommend")
+
+    # Positive feedback signal
+    resume = get_latest_resume()
+    if resume:
+        save_feedback(job_id, resume["id"], "up", "triage_approved")
+
+    return JSONResponse({"ok": True})
+
+
+@app.post("/api/review/{job_id}/pass")
+async def review_pass(job_id: str, background_tasks: BackgroundTasks, body: dict = {}) -> JSONResponse:
+    """Mark a triage job as pass and store negative feedback."""
+    from store import update_pipeline_entry, save_feedback
+    reason = body.get("reason") or "triage_pass"
+
+    update_pipeline_entry(job_id, status="pass", verdict="pass")
+
+    resume = get_latest_resume()
+    if resume:
+        save_feedback(job_id, resume["id"], "down", reason)
+        from resume_matcher import rescore_with_feedback
+        background_tasks.add_task(rescore_with_feedback, resume["id"], job_id, "down", reason)
+
+    return JSONResponse({"ok": True})
+
+
 # ── Static / SPA ───────────────────────────────────────────────────────────────
 
 app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
@@ -715,7 +869,7 @@ app.mount("/static", StaticFiles(directory=str(_STATIC)), name="static")
 
 @app.get("/")
 def root():
-    return RedirectResponse(url="/pipeline")
+    return RedirectResponse(url="/review")
 
 
 @app.get("/jobs")
@@ -731,6 +885,11 @@ def pipeline_page() -> FileResponse:
 @app.get("/coach")
 def coach_page() -> FileResponse:
     return FileResponse(str(_STATIC / "coach.html"))
+
+
+@app.get("/review")
+def review_page() -> FileResponse:
+    return FileResponse(str(_STATIC / "review.html"))
 
 
 if __name__ == "__main__":

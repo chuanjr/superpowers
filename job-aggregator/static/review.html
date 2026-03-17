@@ -1,0 +1,915 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Review Queue</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f0ede8;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .page-header {
+    padding: 28px 48px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .page-header h1 { font-size: 1.6rem; font-weight: 700; }
+  .page-header .subtitle { font-size: 0.85rem; color: #6b7280; margin-top: 3px; }
+  .header-nav {
+    display: flex; gap: 8px; align-items: center;
+  }
+  .nav-link {
+    font-size: 0.82rem; color: #6b7280; text-decoration: none;
+    padding: 6px 14px; border: 1.5px solid #e5e7eb;
+    border-radius: 7px; background: #fff;
+    transition: border-color .12s;
+  }
+  .nav-link:hover { border-color: #9ca3af; color: #374151; }
+  .btn-refresh {
+    padding: 7px 16px;
+    background: #1a1a2e; color: #fff;
+    border: none; border-radius: 7px;
+    font-size: 0.82rem; font-weight: 600; cursor: pointer;
+    transition: background .12s;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .btn-refresh:hover { background: #2d2d4e; }
+  .btn-refresh:disabled { background: #9ca3af; cursor: default; }
+  .refresh-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #4ade80; display: inline-block;
+  }
+  .refresh-dot.spinning {
+    background: #f59e0b;
+    animation: pulse .8s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    display: flex; align-items: center; gap: 8px;
+    padding: 0 48px 20px;
+  }
+  .tab {
+    padding: 6px 16px; border-radius: 20px;
+    border: 1.5px solid #e5e7eb; background: #fff;
+    font-size: 0.82rem; font-weight: 500; color: #374151;
+    cursor: pointer; transition: background .12s, border-color .12s;
+  }
+  .tab.active { background: #1a1a2e; color: #fff; border-color: #1a1a2e; }
+  .tab:hover:not(.active) { border-color: #9ca3af; }
+  .spacer { flex: 1; }
+  .btn-gen-all {
+    padding: 6px 16px; border-radius: 7px;
+    border: 1.5px solid #818cf8; background: #f5f3ff;
+    color: #4f46e5; font-size: 0.82rem; font-weight: 600;
+    cursor: pointer; transition: background .12s;
+  }
+  .btn-gen-all:hover { background: #ede9fe; }
+  .btn-gen-all:disabled { opacity: 0.5; cursor: default; }
+  .sort-label { font-size: 0.82rem; color: #9ca3af; }
+  .sort-sel {
+    padding: 5px 10px; border: 1.5px solid #e5e7eb;
+    border-radius: 7px; font-size: 0.82rem; background: #fff;
+    cursor: pointer; outline: none;
+  }
+
+  /* ── Main content ── */
+  .main-content {
+    padding: 0 48px 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  /* ── Empty state ── */
+  .empty-state {
+    background: #fff; border: 1px solid #e5e7eb;
+    border-radius: 14px; padding: 60px 40px;
+    text-align: center; color: #9ca3af;
+  }
+  .empty-state h2 { font-size: 1.1rem; color: #374151; margin-bottom: 8px; }
+  .empty-state p { font-size: 0.85rem; line-height: 1.6; margin-bottom: 20px; }
+  .btn-empty-action {
+    padding: 10px 24px; background: #1a1a2e; color: #fff;
+    border: none; border-radius: 8px; font-size: 0.88rem;
+    font-weight: 600; cursor: pointer;
+  }
+  .btn-empty-action:hover { background: #2d2d4e; }
+
+  /* ── Job card ── */
+  .job-card {
+    background: #fff;
+    border: 1px solid #e5e7eb;
+    border-radius: 14px;
+    overflow: hidden;
+    transition: box-shadow .12s, border-color .12s;
+  }
+  .job-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.08); border-color: #d1d5db; }
+  .job-card.recommend-apply  { border-left: 4px solid #16a34a; }
+  .job-card.recommend-consider { border-left: 4px solid #d97706; }
+  .job-card.recommend-pass   { border-left: 4px solid #9ca3af; }
+
+  /* Card header */
+  .card-header {
+    padding: 18px 22px 14px;
+    display: flex; align-items: flex-start; gap: 16px;
+    cursor: pointer;
+  }
+  .card-logo {
+    width: 40px; height: 40px; border-radius: 8px;
+    background: #f3f4f6; border: 1px solid #e5e7eb;
+    flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; overflow: hidden;
+  }
+  .card-logo img { width: 100%; height: 100%; object-fit: contain; }
+  .card-main { flex: 1; min-width: 0; }
+  .card-company { font-weight: 700; font-size: 0.95rem; }
+  .card-title   { font-size: 0.85rem; color: #374151; margin-top: 2px; }
+  .card-meta    { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+
+  .badge-score {
+    font-size: 0.78rem; font-weight: 700;
+    padding: 3px 10px; border-radius: 20px;
+  }
+  .badge-score.high   { background: #dcfce7; color: #15803d; }
+  .badge-score.mid    { background: #fef9c3; color: #92400e; }
+  .badge-score.low    { background: #f3f4f6; color: #6b7280; }
+  .badge-culture {
+    font-size: 0.78rem; padding: 3px 10px; border-radius: 20px;
+    background: #f3f4f6; color: #6b7280;
+  }
+  .badge-market {
+    font-size: 0.72rem; padding: 2px 8px; border-radius: 20px; font-weight: 500;
+  }
+  .tag-market-tw { background: #fef3c7; color: #92400e; }
+  .tag-market-jp { background: #fee2e2; color: #991b1b; }
+  .tag-market-sg { background: #dbeafe; color: #1e40af; }
+  .tag-market-us { background: #d1fae5; color: #065f46; }
+  .tag-market-unknown { background: #f3f4f6; color: #6b7280; }
+  .badge-date   { font-size: 0.75rem; color: #9ca3af; }
+  .badge-rec {
+    font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 20px;
+  }
+  .rec-apply   { background: #dcfce7; color: #15803d; }
+  .rec-consider { background: #fef9c3; color: #92400e; }
+  .rec-pass    { background: #f3f4f6; color: #9ca3af; }
+
+  .card-chevron {
+    font-size: 1rem; color: #9ca3af; transition: transform .18s;
+    flex-shrink: 0; padding-top: 2px;
+  }
+  .job-card.expanded .card-chevron { transform: rotate(90deg); }
+
+  /* Coach brief section */
+  .card-brief {
+    display: none;
+    border-top: 1px solid #f3f4f6;
+    padding: 18px 22px 0;
+  }
+  .job-card.expanded .card-brief { display: block; }
+
+  .brief-loading {
+    font-size: 0.82rem; color: #9ca3af; font-style: italic;
+    padding: 10px 0 18px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .brief-spinner {
+    width: 14px; height: 14px; border: 2px solid #e5e7eb;
+    border-top-color: #818cf8; border-radius: 50%;
+    animation: spin .7s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .brief-headline {
+    font-size: 0.92rem; font-weight: 700; color: #1a1a2e;
+    margin-bottom: 8px;
+  }
+  .brief-summary {
+    font-size: 0.85rem; line-height: 1.6; color: #374151;
+    margin-bottom: 14px;
+  }
+  .brief-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px; margin-bottom: 14px;
+  }
+  @media (max-width: 700px) { .brief-grid { grid-template-columns: 1fr; } }
+  .brief-block { }
+  .brief-block-title {
+    font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: #9ca3af; margin-bottom: 6px;
+  }
+  .brief-items {
+    display: flex; flex-direction: column; gap: 4px;
+  }
+  .brief-item {
+    font-size: 0.82rem; color: #374151; line-height: 1.4;
+    padding-left: 14px; position: relative;
+  }
+  .brief-item::before { content: attr(data-icon); position: absolute; left: 0; }
+  .brief-culture {
+    background: #f9fafb; border-radius: 8px; padding: 10px 14px;
+    margin-bottom: 14px; font-size: 0.84rem; color: #374151;
+  }
+
+  /* Card actions */
+  .card-actions {
+    padding: 14px 22px 18px;
+    display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+  }
+  .btn-approve {
+    padding: 8px 24px;
+    background: #15803d; color: #fff;
+    border: none; border-radius: 8px;
+    font-size: 0.88rem; font-weight: 700; cursor: pointer;
+    transition: background .12s;
+  }
+  .btn-approve:hover { background: #166534; }
+  .btn-pass {
+    padding: 8px 20px;
+    background: none; color: #6b7280;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    font-size: 0.88rem; font-weight: 600; cursor: pointer;
+    transition: border-color .12s, color .12s;
+  }
+  .btn-pass:hover { border-color: #9ca3af; color: #374151; }
+  .btn-pkg-link, .btn-coach-link {
+    padding: 7px 14px;
+    background: none; color: #6b7280;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    font-size: 0.82rem; cursor: pointer;
+    transition: border-color .12s;
+    text-decoration: none; display: inline-flex; align-items: center; gap: 4px;
+  }
+  .btn-pkg-link:hover { border-color: #818cf8; color: #4f46e5; }
+  .btn-coach-link:hover { border-color: #34d399; color: #065f46; }
+  .btn-gen-brief {
+    padding: 6px 14px;
+    background: none; color: #9ca3af;
+    border: 1.5px solid #e5e7eb; border-radius: 7px;
+    font-size: 0.8rem; cursor: pointer;
+    transition: border-color .12s, color .12s;
+    margin-left: auto;
+  }
+  .btn-gen-brief:hover { border-color: #818cf8; color: #4f46e5; }
+
+  /* ── Pass modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,.35);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100;
+  }
+  .modal-overlay.hidden { display: none; }
+  .modal {
+    background: #fff; border-radius: 12px;
+    padding: 24px 28px; width: 380px; max-width: 95vw;
+    box-shadow: 0 8px 32px rgba(0,0,0,.18);
+  }
+  .modal h3 { font-size: 1rem; font-weight: 700; margin-bottom: 6px; }
+  .modal p  { font-size: 0.82rem; color: #6b7280; margin-bottom: 16px; }
+  .modal-reasons { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  .modal-reason {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; border: 1.5px solid #e5e7eb;
+    border-radius: 7px; cursor: pointer; font-size: 0.85rem;
+    transition: border-color .12s, background .12s;
+  }
+  .modal-reason:hover { border-color: #9ca3af; background: #f9fafb; }
+  .modal-reason.selected { border-color: #f87171; background: #fff1f2; }
+  .modal-btns { display: flex; gap: 8px; justify-content: flex-end; }
+  .btn-cancel {
+    padding: 7px 18px; border: 1.5px solid #e5e7eb;
+    border-radius: 7px; background: #fff; font-size: 0.85rem; cursor: pointer;
+  }
+  .btn-cancel:hover { background: #f9fafb; }
+  .btn-confirm-pass {
+    padding: 7px 18px; border: none;
+    border-radius: 7px; background: #dc2626; color: #fff;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer;
+  }
+  .btn-confirm-pass:hover { background: #b91c1c; }
+
+  /* Coach chat drawer */
+  .drawer-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.2);
+    z-index: 200; display: none;
+  }
+  .drawer-overlay.open { display: block; }
+  .drawer {
+    position: fixed; top: 0; right: 0; bottom: 0; width: 480px;
+    max-width: 95vw; background: #fff;
+    box-shadow: -4px 0 32px rgba(0,0,0,.15);
+    display: flex; flex-direction: column; z-index: 201;
+    transform: translateX(100%);
+    transition: transform .22s cubic-bezier(.4,0,.2,1);
+  }
+  .drawer.open { transform: translateX(0); }
+  .drawer-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 20px 24px 16px; border-bottom: 1px solid #f3f4f6; flex-shrink: 0;
+  }
+  .drawer-header h2 { font-size: 1rem; font-weight: 700; }
+  .drawer-header .job-meta { font-size: 0.78rem; color: #6b7280; margin-top: 2px; }
+  .btn-close-drawer {
+    background: none; border: none; font-size: 1.3rem; color: #9ca3af;
+    cursor: pointer; padding: 4px; border-radius: 4px;
+  }
+  .btn-close-drawer:hover { color: #374151; }
+  .chat-messages {
+    flex: 1; overflow-y: auto; padding: 16px 24px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+  .chat-msg { display: flex; gap: 10px; }
+  .chat-msg.user { flex-direction: row-reverse; }
+  .chat-bubble {
+    max-width: 82%; padding: 10px 14px; border-radius: 12px;
+    font-size: 0.85rem; line-height: 1.5; white-space: pre-wrap;
+    background: #f3f4f6; color: #374151;
+  }
+  .chat-msg.user .chat-bubble { background: #1a1a2e; color: #fff; border-radius: 12px 12px 2px 12px; }
+  .chat-msg.assistant .chat-bubble { border-radius: 2px 12px 12px 12px; }
+  .chat-thinking { font-size: 0.8rem; color: #9ca3af; font-style: italic; padding: 4px 24px; flex-shrink: 0; }
+  .chat-input-row {
+    display: flex; gap: 8px; padding: 12px 24px 16px;
+    border-top: 1px solid #f3f4f6; flex-shrink: 0;
+  }
+  .chat-input {
+    flex: 1; border: 1.5px solid #e5e7eb; border-radius: 8px;
+    padding: 8px 12px; font-size: 0.85rem; font-family: inherit;
+    outline: none; resize: none; min-height: 40px; max-height: 120px;
+  }
+  .chat-input:focus { border-color: #818cf8; }
+  .btn-send {
+    padding: 8px 16px; background: #1a1a2e; color: #fff;
+    border: none; border-radius: 8px; font-size: 0.85rem;
+    font-weight: 600; cursor: pointer; align-self: flex-end;
+  }
+  .btn-send:hover { background: #2d2d4e; }
+  .btn-send:disabled { background: #9ca3af; cursor: default; }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div>
+    <h1>👀 Review Queue</h1>
+    <div class="subtitle" id="queue-subtitle">Your personal headhunter — review before committing to pipeline</div>
+  </div>
+  <div class="header-nav">
+    <a href="/jobs" class="nav-link">Job Board</a>
+    <a href="/pipeline" class="nav-link">Pipeline</a>
+    <a href="/coach" class="nav-link">Coach</a>
+    <button class="btn-refresh" id="btn-refresh">
+      <span class="refresh-dot" id="refresh-dot"></span>
+      Refresh Jobs
+    </button>
+  </div>
+</div>
+
+<div class="toolbar">
+  <button class="tab active" data-filter="all">All</button>
+  <button class="tab" data-filter="apply" style="border-color:#86efac;color:#15803d">✅ Apply</button>
+  <button class="tab" data-filter="consider" style="border-color:#fde68a;color:#92400e">🤔 Consider</button>
+  <button class="tab" data-filter="80plus">80+ Match</button>
+  <div class="spacer"></div>
+  <span id="queue-count" style="font-size:0.82rem;color:#9ca3af"></span>
+  <button class="btn-gen-all" id="btn-gen-all">✨ Generate All Briefs</button>
+  <span class="sort-label">Sort by</span>
+  <select class="sort-sel" id="sort-sel">
+    <option value="score-desc">Match score ↓</option>
+    <option value="date-desc">Newest first</option>
+    <option value="company">Company A→Z</option>
+  </select>
+</div>
+
+<div class="main-content" id="main-content">
+  <div class="empty-state">
+    <div style="font-size:2.5rem;margin-bottom:12px">⏳</div>
+    <h2>Loading…</h2>
+  </div>
+</div>
+
+<!-- Pass modal -->
+<div class="modal-overlay hidden" id="pass-modal">
+  <div class="modal">
+    <h3>⏭ Pass on this role</h3>
+    <p>Why is this not a fit? (helps improve future scoring)</p>
+    <div class="modal-reasons" id="pass-reasons"></div>
+    <div class="modal-btns">
+      <button class="btn-cancel" id="pass-cancel">Cancel</button>
+      <button class="btn-confirm-pass" id="pass-confirm">Pass</button>
+    </div>
+  </div>
+</div>
+
+<!-- Coach chat drawer -->
+<div class="drawer-overlay" id="coach-overlay">
+  <div class="drawer" id="coach-drawer">
+    <div class="drawer-header">
+      <div>
+        <h2>💬 Job Coach</h2>
+        <div class="job-meta" id="coach-job-meta"></div>
+      </div>
+      <button class="btn-close-drawer" id="coach-close">×</button>
+    </div>
+    <div class="chat-messages" id="coach-messages"></div>
+    <div id="coach-thinking" class="chat-thinking" style="display:none">Coach is thinking…</div>
+    <div class="chat-input-row">
+      <textarea class="chat-input" id="coach-input" rows="2"
+        placeholder="Ask about this role, interview prep, story match…"></textarea>
+      <button class="btn-send" id="coach-send">Send</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let ALL_ENTRIES = [];
+  let FILTER = 'all';
+  let _passJobId = null;
+  let _coachJobId = null;
+  let _coachMessages = [];
+
+  const PASS_REASONS = [
+    { value: 'wrong_level',   label: '職等不符 (Wrong seniority level)' },
+    { value: 'wrong_domain',  label: '產業/領域不符 (Wrong domain/industry)' },
+    { value: 'bad_culture',   label: '文化不契合 (Culture mismatch)' },
+    { value: 'role_type',     label: '非目標職種 (Not target role type)' },
+    { value: 'location',      label: '地點問題 (Location/remote issue)' },
+    { value: 'other',         label: '其他 (Other)' },
+  ];
+
+  function escHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const d = new Date(iso);
+    const diff = (Date.now() - d) / 86400000;
+    if (diff < 1) return 'today';
+    if (diff < 2) return 'yesterday';
+    if (diff < 7) return `${Math.floor(diff)} days ago`;
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
+
+  function marketClass(m) {
+    const map = { tw: 'tag-market-tw', jp: 'tag-market-jp', sg: 'tag-market-sg', us: 'tag-market-us' };
+    return map[m] || 'tag-market-unknown';
+  }
+
+  function scoreBadgeClass(s) {
+    if (!s) return 'low';
+    return s >= 80 ? 'high' : s >= 65 ? 'mid' : 'low';
+  }
+
+  // ── Load ─────────────────────────────────────────────────────
+
+  async function load() {
+    const data = await fetch('/api/review').then(r => r.json());
+    ALL_ENTRIES = data.entries || [];
+    render();
+  }
+
+  function getFiltered() {
+    let entries = [...ALL_ENTRIES];
+    if (FILTER === 'apply') {
+      entries = entries.filter(e => {
+        const s = getSummary(e);
+        return s && s.recommendation === 'apply';
+      });
+    } else if (FILTER === 'consider') {
+      entries = entries.filter(e => {
+        const s = getSummary(e);
+        return s && s.recommendation === 'consider';
+      });
+    } else if (FILTER === '80plus') {
+      entries = entries.filter(e => (e.score || 0) >= 80);
+    }
+    const sort = document.getElementById('sort-sel').value;
+    if (sort === 'score-desc') entries.sort((a, b) => (b.score || 0) - (a.score || 0));
+    else if (sort === 'date-desc') entries.sort((a, b) => (b.first_seen_at || '').localeCompare(a.first_seen_at || ''));
+    else if (sort === 'company') entries.sort((a, b) => (a.company || '').localeCompare(b.company || ''));
+    return entries;
+  }
+
+  function getSummary(entry) {
+    if (!entry.summary_json) return null;
+    try {
+      return typeof entry.summary_json === 'string' ? JSON.parse(entry.summary_json) : entry.summary_json;
+    } catch { return null; }
+  }
+
+  function render() {
+    const entries = getFiltered();
+    const main = document.getElementById('main-content');
+    document.getElementById('queue-count').textContent = `${ALL_ENTRIES.length} job${ALL_ENTRIES.length !== 1 ? 's' : ''} pending`;
+    document.getElementById('queue-subtitle').textContent =
+      ALL_ENTRIES.length
+        ? `${ALL_ENTRIES.length} job${ALL_ENTRIES.length !== 1 ? 's' : ''} scored ≥70% — decide before committing`
+        : 'No jobs in review queue. Refresh to check for new matches.';
+
+    if (!entries.length && FILTER === 'all') {
+      main.innerHTML = `<div class="empty-state">
+        <div style="font-size:2.5rem;margin-bottom:12px">🎉</div>
+        <h2>Review queue is empty</h2>
+        <p>Either no jobs scored ≥70%, or you've reviewed everything.<br>
+        Click Refresh Jobs to check for new matches.</p>
+        <button class="btn-empty-action" onclick="triggerRefresh()">🔄 Refresh Jobs</button>
+      </div>`;
+      return;
+    }
+
+    if (!entries.length) {
+      main.innerHTML = `<div class="empty-state">
+        <div style="font-size:2rem;margin-bottom:8px">🔍</div>
+        <h2>No jobs match this filter</h2>
+        <p>Generate briefs for all jobs to see coach recommendations.</p>
+      </div>`;
+      return;
+    }
+
+    main.innerHTML = entries.map(e => buildCard(e)).join('');
+  }
+
+  function buildCard(e) {
+    const summary = getSummary(e);
+    const score = e.score ?? (e.similarity != null ? Math.round(e.similarity * 100) : null);
+    const scoreStr = score != null ? `${score}% match` : '— match';
+    const scoreClass = scoreBadgeClass(score);
+
+    const market = (e.market || '').toUpperCase();
+    const marketBadge = market
+      ? `<span class="badge-market ${marketClass(e.market)}">${escHtml(market)}</span>` : '';
+
+    const cultureBadge = e.culture_score != null
+      ? `<span class="badge-culture">${e.culture_score >= 70 ? '🟢' : e.culture_score >= 40 ? '🟡' : '🔴'} Culture ${e.culture_score}</span>`
+      : '';
+
+    const recBadge = summary?.recommendation
+      ? `<span class="badge-rec rec-${summary.recommendation}">${summary.recommendation === 'apply' ? '✅ Apply' : summary.recommendation === 'consider' ? '🤔 Consider' : '⏭ Pass'}</span>`
+      : '';
+
+    const summaryStatus = e.summary_status;
+    const loadingStatus = summaryStatus === 'pending' ? `
+      <div class="brief-loading">
+        <div class="brief-spinner"></div>
+        Generating career coach brief…
+      </div>` : '';
+
+    const briefContent = summary ? buildBriefContent(summary) : (summaryStatus === 'pending' ? '' : `
+      <div style="font-size:0.82rem;color:#9ca3af;padding:10px 0 18px">
+        No brief yet.
+        <button class="btn-gen-brief" data-job-id="${escHtml(e.job_id)}" onclick="generateBrief(this.dataset.jobId)">
+          ✨ Generate Brief
+        </button>
+      </div>`);
+
+    const recClass = summary?.recommendation ? `recommend-${summary.recommendation}` : '';
+
+    const logoHtml = e.logo_url
+      ? `<img src="${escHtml(e.logo_url)}" alt="" onerror="this.style.display='none'">`
+      : (e.company || '?')[0].toUpperCase();
+
+    return `<div class="job-card ${recClass}" id="card-${escHtml(e.job_id)}" data-job-id="${escHtml(e.job_id)}">
+  <div class="card-header" onclick="toggleCard('${escHtml(e.job_id)}')">
+    <div class="card-logo">${logoHtml}</div>
+    <div class="card-main">
+      <div class="card-company">
+        <a href="${escHtml(e.url || '#')}" target="_blank" rel="noopener"
+           onclick="event.stopPropagation()" style="color:inherit;text-decoration:none">
+          ${escHtml(e.company || '—')}
+        </a>
+      </div>
+      <div class="card-title">${escHtml(e.title || '')}</div>
+      <div class="card-meta">
+        <span class="badge-score ${scoreClass}">${scoreStr}</span>
+        ${cultureBadge}
+        ${marketBadge}
+        ${recBadge}
+        <span class="badge-date">${fmtDate(e.first_seen_at)}</span>
+      </div>
+    </div>
+    <div class="card-chevron">›</div>
+  </div>
+
+  <div class="card-brief">
+    ${loadingStatus}
+    ${briefContent}
+    <div class="card-actions">
+      <button class="btn-approve" data-job-id="${escHtml(e.job_id)}" onclick="approveJob('${escHtml(e.job_id)}')">
+        ✅ Add to Pipeline
+      </button>
+      <button class="btn-pass" data-job-id="${escHtml(e.job_id)}" onclick="openPassModal('${escHtml(e.job_id)}')">
+        ⏭ Pass
+      </button>
+      <button class="btn-coach-link" onclick="openCoach('${escHtml(e.job_id)}')">💬 Ask Coach</button>
+      <a href="/pipeline" class="btn-pkg-link" onclick="approveAndGo(event, '${escHtml(e.job_id)}')">📋 Full Package</a>
+    </div>
+  </div>
+</div>`;
+  }
+
+  function buildBriefContent(s) {
+    if (s.error) return `<div class="brief-loading" style="color:#ef4444">Error: ${escHtml(s.error)}</div>`;
+    const strengthsHtml = (s.strengths || []).map(x =>
+      `<div class="brief-item" data-icon="✅">${escHtml(x)}</div>`).join('');
+    const gapsHtml = (s.gaps || []).map(x =>
+      `<div class="brief-item" data-icon="⚠️">${escHtml(x)}</div>`).join('');
+    const challengesHtml = (s.key_challenges || []).map(x =>
+      `<div class="brief-item" data-icon="🔥">${escHtml(x)}</div>`).join('');
+    const cultureHtml = s.culture_verdict ? `
+      <div class="brief-culture">
+        ${s.culture_score != null ? `${s.culture_score >= 70 ? '🟢' : s.culture_score >= 40 ? '🟡' : '🔴'} ` : ''}
+        ${escHtml(s.culture_verdict)}
+      </div>` : '';
+
+    return `
+    <div class="brief-headline">${escHtml(s.headline || '')}</div>
+    <div class="brief-summary">${escHtml(s.fit_summary || '')}</div>
+    <div class="brief-grid">
+      ${strengthsHtml ? `<div class="brief-block">
+        <div class="brief-block-title">You bring</div>
+        <div class="brief-items">${strengthsHtml}</div>
+      </div>` : ''}
+      <div class="brief-block">
+        ${gapsHtml ? `<div class="brief-block-title">Gaps to address</div>
+        <div class="brief-items">${gapsHtml}</div>` : ''}
+        ${challengesHtml ? `<div class="brief-block-title" style="margin-top:10px">Key challenges</div>
+        <div class="brief-items">${challengesHtml}</div>` : ''}
+      </div>
+    </div>
+    ${cultureHtml}`;
+  }
+
+  // ── Card expand/collapse ──────────────────────────────────────
+
+  const _expandedCards = new Set();
+
+  function toggleCard(jobId) {
+    const card = document.getElementById(`card-${jobId}`);
+    if (!card) return;
+    if (card.classList.contains('expanded')) {
+      card.classList.remove('expanded');
+      _expandedCards.delete(jobId);
+    } else {
+      card.classList.add('expanded');
+      _expandedCards.add(jobId);
+      // Auto-generate brief if not yet done
+      const entry = ALL_ENTRIES.find(e => e.job_id === jobId);
+      if (entry && !entry.summary_json && entry.summary_status !== 'pending') {
+        generateBrief(jobId);
+      }
+    }
+  }
+
+  async function generateBrief(jobId) {
+    const entry = ALL_ENTRIES.find(e => e.job_id === jobId);
+    if (!entry) return;
+    entry.summary_status = 'pending';
+    // Re-render brief section only
+    const card = document.getElementById(`card-${jobId}`);
+    if (card && card.classList.contains('expanded')) {
+      const briefDiv = card.querySelector('.card-brief');
+      if (briefDiv) {
+        const actionsEl = briefDiv.querySelector('.card-actions');
+        briefDiv.innerHTML = `<div class="brief-loading"><div class="brief-spinner"></div>Generating career coach brief…</div>`;
+        if (actionsEl) briefDiv.appendChild(actionsEl);
+      }
+    }
+
+    const resp = await fetch(`/api/review/${encodeURIComponent(jobId)}/summary`, { method: 'POST' });
+    if (!resp.ok) return;
+
+    // Poll for result
+    const timer = setInterval(async () => {
+      const data = await fetch(`/api/review/${encodeURIComponent(jobId)}/summary`).then(r => r.json());
+      if (data.status === 'done' && data.summary) {
+        clearInterval(timer);
+        entry.summary_json = JSON.stringify(data.summary);
+        entry.summary_status = 'done';
+        if (data.summary.culture_score != null) entry.culture_score = data.summary.culture_score;
+        // Re-render card
+        const oldCard = document.getElementById(`card-${jobId}`);
+        if (oldCard) {
+          const wasExpanded = oldCard.classList.contains('expanded');
+          const newHtml = buildCard(entry);
+          const tmp = document.createElement('div');
+          tmp.innerHTML = newHtml;
+          const newCard = tmp.firstElementChild;
+          if (wasExpanded) newCard.classList.add('expanded');
+          oldCard.replaceWith(newCard);
+        }
+      } else if (data.status === 'error') {
+        clearInterval(timer);
+        entry.summary_status = 'error';
+      }
+    }, 2500);
+  }
+
+  // ── Batch generate ───────────────────────────────────────────
+
+  document.getElementById('btn-gen-all').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-gen-all');
+    btn.disabled = true; btn.textContent = '⏳ Generating…';
+    const toGenerate = ALL_ENTRIES.filter(e => !e.summary_json && e.summary_status !== 'pending');
+    await Promise.all(toGenerate.map(e => generateBrief(e.job_id)));
+    btn.disabled = false; btn.textContent = '✨ Generate All Briefs';
+  });
+
+  // ── Approve / Pass ────────────────────────────────────────────
+
+  async function approveJob(jobId) {
+    const btn = document.querySelector(`#card-${CSS.escape(jobId)} .btn-approve`);
+    if (btn) { btn.disabled = true; btn.textContent = '✓ Added!'; }
+    await fetch(`/api/review/${encodeURIComponent(jobId)}/approve`, { method: 'POST' });
+    ALL_ENTRIES = ALL_ENTRIES.filter(e => e.job_id !== jobId);
+    render();
+  }
+
+  async function approveAndGo(event, jobId) {
+    event.preventDefault();
+    await approveJob(jobId);
+    window.location.href = '/pipeline';
+  }
+
+  function openPassModal(jobId) {
+    _passJobId = jobId;
+    const reasons = document.getElementById('pass-reasons');
+    reasons.innerHTML = PASS_REASONS.map(r => `
+      <label class="modal-reason">
+        <input type="radio" name="pass-reason" value="${escHtml(r.value)}">
+        ${escHtml(r.label)}
+      </label>`).join('');
+    const first = reasons.querySelector('input');
+    if (first) { first.checked = true; first.closest('.modal-reason').classList.add('selected'); }
+    reasons.querySelectorAll('.modal-reason').forEach(el => {
+      el.addEventListener('click', () => {
+        reasons.querySelectorAll('.modal-reason').forEach(x => x.classList.remove('selected'));
+        el.classList.add('selected');
+        el.querySelector('input').checked = true;
+      });
+    });
+    document.getElementById('pass-modal').classList.remove('hidden');
+  }
+
+  document.getElementById('pass-cancel').addEventListener('click', () => {
+    document.getElementById('pass-modal').classList.add('hidden');
+    _passJobId = null;
+  });
+
+  document.getElementById('pass-confirm').addEventListener('click', async () => {
+    const selected = document.querySelector('input[name=pass-reason]:checked');
+    const reason = selected ? selected.value : 'other';
+    document.getElementById('pass-modal').classList.add('hidden');
+    if (!_passJobId) return;
+    await fetch(`/api/review/${encodeURIComponent(_passJobId)}/pass`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ reason }),
+    });
+    ALL_ENTRIES = ALL_ENTRIES.filter(e => e.job_id !== _passJobId);
+    _passJobId = null;
+    render();
+  });
+
+  document.getElementById('pass-modal').addEventListener('click', e => {
+    if (e.target === e.currentTarget) {
+      e.currentTarget.classList.add('hidden');
+      _passJobId = null;
+    }
+  });
+
+  // ── Refresh jobs ──────────────────────────────────────────────
+
+  async function triggerRefresh() {
+    const btn = document.getElementById('btn-refresh');
+    const dot = document.getElementById('refresh-dot');
+    btn.disabled = true;
+    dot.classList.add('spinning');
+    btn.textContent = '';
+    btn.appendChild(dot);
+    btn.append(' Refreshing…');
+
+    await fetch('/api/jobs/refresh', { method: 'POST' });
+    pollRefresh();
+  }
+
+  function pollRefresh() {
+    const timer = setInterval(async () => {
+      const data = await fetch('/api/jobs/refresh/status').then(r => r.json());
+      if (!data.running) {
+        clearInterval(timer);
+        const btn = document.getElementById('btn-refresh');
+        const dot = document.getElementById('refresh-dot');
+        dot.classList.remove('spinning');
+        btn.innerHTML = '';
+        btn.appendChild(dot);
+        btn.append(` Done (+${data.new_count ?? 0} jobs)`);
+        btn.disabled = false;
+        setTimeout(() => {
+          btn.innerHTML = '';
+          btn.appendChild(dot);
+          btn.append(' Refresh Jobs');
+        }, 3000);
+        await load();  // Reload review queue with new jobs
+      }
+    }, 2000);
+  }
+
+  document.getElementById('btn-refresh').addEventListener('click', triggerRefresh);
+
+  // ── Toolbar ───────────────────────────────────────────────────
+
+  document.querySelectorAll('.tab').forEach(t => {
+    t.addEventListener('click', () => {
+      document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+      t.classList.add('active');
+      FILTER = t.dataset.filter;
+      render();
+    });
+  });
+
+  document.getElementById('sort-sel').addEventListener('change', render);
+
+  // ── Coach chat ────────────────────────────────────────────────
+
+  function openCoach(jobId) {
+    _coachJobId = jobId;
+    _coachMessages = [];
+    const entry = ALL_ENTRIES.find(e => e.job_id === jobId);
+    document.getElementById('coach-job-meta').textContent =
+      entry ? `${entry.company} — ${entry.title}` : jobId;
+    document.getElementById('coach-messages').innerHTML = '';
+    document.getElementById('coach-input').value = '';
+    appendCoachMsg('assistant', `Hi! I'm your coach for this role. Ask me to:\n• Decode what they're really looking for\n• Match your stories to the JD\n• Generate practice interview questions\n• Draft a "why this company" answer\n\nWhat would you like to explore?`);
+    document.getElementById('coach-overlay').classList.add('open');
+    document.getElementById('coach-drawer').classList.add('open');
+  }
+
+  function appendCoachMsg(role, text) {
+    const c = document.getElementById('coach-messages');
+    const d = document.createElement('div');
+    d.className = `chat-msg ${role}`;
+    d.innerHTML = `<div class="chat-bubble">${escHtml(text)}</div>`;
+    c.appendChild(d);
+    c.scrollTop = c.scrollHeight;
+  }
+
+  async function sendCoachMessage() {
+    const input = document.getElementById('coach-input');
+    const text = input.value.trim();
+    if (!text || !_coachJobId) return;
+    input.value = '';
+    appendCoachMsg('user', text);
+    _coachMessages.push({ role: 'user', content: text });
+    document.getElementById('coach-send').disabled = true;
+    document.getElementById('coach-thinking').style.display = 'block';
+    try {
+      const resp = await fetch(`/api/coach/chat/${encodeURIComponent(_coachJobId)}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: _coachMessages }),
+      });
+      const data = await resp.json();
+      const reply = data.message || '(no response)';
+      _coachMessages.push({ role: 'assistant', content: reply });
+      appendCoachMsg('assistant', reply);
+    } catch { appendCoachMsg('assistant', 'Something went wrong. Try again.'); }
+    finally {
+      document.getElementById('coach-send').disabled = false;
+      document.getElementById('coach-thinking').style.display = 'none';
+    }
+  }
+
+  document.getElementById('coach-close').addEventListener('click', () => {
+    document.getElementById('coach-overlay').classList.remove('open');
+    document.getElementById('coach-drawer').classList.remove('open');
+  });
+  document.getElementById('coach-overlay').addEventListener('click', e => {
+    if (e.target === e.currentTarget) {
+      e.currentTarget.classList.remove('open');
+      document.getElementById('coach-drawer').classList.remove('open');
+    }
+  });
+  document.getElementById('coach-send').addEventListener('click', sendCoachMessage);
+  document.getElementById('coach-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCoachMessage(); }
+  });
+
+  // ── Init ──────────────────────────────────────────────────────
+  load();
+</script>
+
+</body>
+</html>
