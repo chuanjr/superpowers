@@ -450,6 +450,8 @@ def get_package(job_id: str) -> JSONResponse:
         task_state = _pkg_tasks.get(job_id, {})
         if task_state.get("running"):
             return JSONResponse({"status": "processing"})
+        if task_state.get("error"):
+            return JSONResponse({"status": "error", "error": task_state["error"]})
         return JSONResponse({"status": "none"})
 
     def _parse(key):
@@ -490,9 +492,15 @@ async def generate_package_endpoint(job_id: str, background_tasks: BackgroundTas
     _pkg_tasks[job_id] = {"running": True, "error": None}
 
     async def _run():
+        import asyncio
         from application_generator import generate_package
         try:
-            await generate_package(job_id, resume["id"], job, resume)
+            await asyncio.wait_for(
+                generate_package(job_id, resume["id"], job, resume),
+                timeout=120.0,
+            )
+        except asyncio.TimeoutError:
+            _pkg_tasks[job_id]["error"] = "Generation timed out after 2 minutes. Please try again."
         except Exception as exc:
             _pkg_tasks[job_id]["error"] = str(exc)
         finally:

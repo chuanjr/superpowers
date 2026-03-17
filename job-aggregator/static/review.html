@@ -904,7 +904,7 @@
   });
   document.getElementById('coach-send').addEventListener('click', sendCoachMessage);
   document.getElementById('coach-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCoachMessage(); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendCoachMessage(); }
   });
 
   // ── Init ──────────────────────────────────────────────────────

@@ -1236,6 +1236,13 @@
       return;
     }
 
+    if (data.status === 'error') {
+      body.innerHTML = `<div class="pkg-status-msg" style="color:#dc2626">❌ ${escHtml(data.error || 'Generation failed. Please try again.')}</div>`;
+      genBtn.disabled = false; genBtn.textContent = '↺ Retry';
+      dlBtn.style.display = 'none';
+      return;
+    }
+
     // Done — render sections
     genBtn.disabled = false; genBtn.textContent = '↺ Regenerate';
     dlBtn.style.display = '';
@@ -1422,7 +1429,7 @@
 
   document.getElementById('coach-send-btn').addEventListener('click', sendCoachMessage);
   document.getElementById('coach-chat-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendCoachMessage(); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendCoachMessage(); }
   });
 
   // ── Pipeline table click delegation (add new actions) ─────

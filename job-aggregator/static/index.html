@@ -943,8 +943,6 @@
         MATCH_DATA[m.job_id] = { score: m.score, similarity: m.similarity, explanation: m.explanation };
       }
       if (RESUME_STATUS === 'done') {
-        const sel = document.getElementById('sort-select');
-        if (sel) sel.value = 'best-match';
         loadPipelineIds();
       }
       updateResumeUI();
@@ -1274,8 +1272,6 @@
 
       if (data.status === 'done') {
         RESUME_STATUS = 'done';
-        const sel = document.getElementById('sort-select');
-        if (sel) sel.value = 'best-match';
       } else if (data.status === 'processing') {
         RESUME_STATUS = 'processing';
         // Resume polling so we pick up the final result

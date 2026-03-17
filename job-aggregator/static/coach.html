@@ -416,7 +416,7 @@
   });
 
   document.getElementById('chat-input').addEventListener('keydown', e => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(e.target.value.trim()); }
+    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendMessage(e.target.value.trim()); }
   });
 
   document.getElementById('btn-clear-chat').addEventListener('click', () => {
