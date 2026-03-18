@@ -515,11 +515,9 @@
 
 <div class="toolbar">
   <button class="tab active" data-filter="all">All</button>
-  <button class="tab" data-filter="recommended">Recommended</button>
   <button class="tab" data-filter="applied">Applied</button>
   <button class="tab" data-filter="interviewing">Interviewing</button>
   <button class="tab" data-filter="pass">Pass</button>
-  <button class="tab" data-filter="culture-aligned" style="border-color:#86efac;color:#15803d">🟢 Aligned</button>
   <div class="spacer"></div>
   <span class="role-count" id="role-count"></span>
   <span class="sort-label">Sort by</span>
@@ -735,9 +733,7 @@
 
   function getFiltered() {
     let entries = [...ALL_ENTRIES];
-    if (FILTER === 'culture-aligned') {
-      entries = entries.filter(e => (e.culture_score ?? 0) >= 70);
-    } else if (FILTER !== 'all') {
+    if (FILTER !== 'all') {
       entries = entries.filter(e => e.status === FILTER);
     }
 
@@ -1220,6 +1216,13 @@
         ${missing ? `<div><span style="font-size:0.72rem;color:#9ca3af;font-weight:600">MISSING &nbsp;</span><div class="pkg-chips" style="display:inline-flex">${missing}</div></div>` : ''}`);
     }
 
+    if (data.ats_resume) {
+      html += section('📄 ATS-Optimized Resume', `
+        <div style="font-size:0.78rem;color:#6b7280;margin-bottom:8px">Edit below, then download as PDF.</div>
+        <textarea class="pkg-textarea" id="pkg-ats-resume" rows="18" style="font-family:monospace;font-size:0.82rem">${escHtml(data.ats_resume)}</textarea>
+        <button class="copy-btn" id="pkg-resume-pdf-btn" style="margin-top:6px;background:#1d4ed8;color:#fff;border-color:#1d4ed8;padding:5px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem">⬇ Download PDF</button>`);
+    }
+
     if (data.why_company) {
       html += section('Why This Company', `
         <textarea class="pkg-textarea" id="pkg-why-company">${escHtml(data.why_company)}</textarea>
@@ -1285,6 +1288,38 @@
   document.getElementById('pkg-download-btn').addEventListener('click', () => {
     if (!_pkgJobId) return;
     window.location.href = `/api/pipeline/${encodeURIComponent(_pkgJobId)}/package.txt`;
+  });
+
+  // PDF download (button rendered dynamically inside drawer body)
+  document.getElementById('pkg-drawer-body').addEventListener('click', async e => {
+    const pdfBtn = e.target.closest('#pkg-resume-pdf-btn');
+    if (!pdfBtn || !_pkgJobId) return;
+    const textarea = document.getElementById('pkg-ats-resume');
+    if (!textarea) return;
+    pdfBtn.textContent = '⏳ Generating…';
+    pdfBtn.disabled = true;
+    try {
+      const res = await fetch(`/api/pipeline/${encodeURIComponent(_pkgJobId)}/resume-pdf`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ content: textarea.value }),
+      });
+      if (!res.ok) { alert('PDF generation failed — please try again.'); return; }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `resume-${_pkgJobId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert('PDF generation failed — please try again.');
+    } finally {
+      pdfBtn.textContent = '⬇ Download PDF';
+      pdfBtn.disabled = false;
+    }
   });
 
   // ── Job Coach Chat Drawer ──────────────────────────────────
@@ -1510,11 +1545,17 @@
             const local = ALL_ENTRIES.find(en => en.job_id === jobId);
             if (local) local.culture_score = pkg.culture_score;
             renderTable();
+          } else if (pkg && pkg.status === 'error') {
+            clearInterval(poll);
+            cultureBtn.classList.remove('running');
+            cultureBtn.title = 'Check Culture Fit';
+            alert('Culture check failed — please try again.');
           }
           if (tries >= 20) {
             clearInterval(poll);
             cultureBtn.classList.remove('running');
             cultureBtn.title = 'Check Culture Fit';
+            alert('Culture check timed out — please try again.');
           }
         }, 2000);
       } catch (err) {

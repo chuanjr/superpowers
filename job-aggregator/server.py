@@ -551,8 +551,11 @@ async def pipeline_culture_check(job_id: str, background_tasks: BackgroundTasks)
                 culture_signals=_json.dumps(signals),
                 status="done",
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            upsert_application_package(
+                job_id, resume["id"],
+                status="error",
+            )
 
     background_tasks.add_task(_run)
     return JSONResponse({"ok": True, "status": "started"})
@@ -621,6 +624,7 @@ def get_package(job_id: str) -> JSONResponse:
         "culture_signals": _parse("culture_signals"),
         "story_matches":   _parse("story_matches"),
         "ats_gap":         _parse("ats_gap"),
+        "ats_resume":      pkg.get("ats_resume"),
         "why_company":     pkg.get("why_company"),
         "value_prop":      pkg.get("value_prop"),
         "created_at":      pkg.get("created_at"),
@@ -659,6 +663,95 @@ async def generate_package_endpoint(job_id: str, background_tasks: BackgroundTas
 
     background_tasks.add_task(_run)
     return JSONResponse({"status": "started"})
+
+
+@app.post("/api/pipeline/{job_id}/resume-pdf")
+async def download_resume_pdf(job_id: str, body: dict) -> Response:
+    """Convert ATS-optimized resume text to a styled PDF and return for download."""
+    import io, re as _re
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import cm
+    from reportlab.lib import colors
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
+
+    content = (body.get("content") or "").strip()
+    if not content:
+        raise HTTPException(400, "content is required")
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buf, pagesize=A4,
+        leftMargin=2*cm, rightMargin=2*cm,
+        topMargin=2*cm, bottomMargin=2*cm,
+    )
+
+    styles = getSampleStyleSheet()
+    name_style = ParagraphStyle(
+        "Name", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=18,
+        spaceAfter=4,
+    )
+    section_style = ParagraphStyle(
+        "Section", parent=styles["Normal"],
+        fontName="Helvetica-Bold", fontSize=11,
+        spaceBefore=12, spaceAfter=3,
+        textColor=colors.HexColor("#1a1a1a"),
+        borderPad=0, borderWidth=0,
+        underlineWidth=0.5, underlineColor=colors.HexColor("#999999"),
+    )
+    body_style = ParagraphStyle(
+        "Body", parent=styles["Normal"],
+        fontName="Helvetica", fontSize=10,
+        spaceAfter=2, leading=14,
+    )
+    bullet_style = ParagraphStyle(
+        "Bullet", parent=styles["Normal"],
+        fontName="Helvetica", fontSize=10,
+        spaceAfter=2, leading=14,
+        leftIndent=14, bulletIndent=4,
+    )
+
+    story_elements = []
+    lines = content.split("\n")
+    first_line = True
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            story_elements.append(Spacer(1, 4))
+            continue
+
+        if first_line:
+            # First non-blank line = candidate name
+            story_elements.append(Paragraph(stripped, name_style))
+            story_elements.append(Spacer(1, 2))
+            first_line = False
+            continue
+
+        if stripped.startswith("## "):
+            section_title = stripped[3:].strip()
+            story_elements.append(Paragraph(section_title.upper(), section_style))
+        elif stripped.startswith("# "):
+            section_title = stripped[2:].strip()
+            story_elements.append(Paragraph(section_title.upper(), section_style))
+        elif stripped.startswith("- ") or stripped.startswith("• "):
+            bullet_text = stripped[2:].strip()
+            story_elements.append(Paragraph(f"• {bullet_text}", bullet_style))
+        else:
+            story_elements.append(Paragraph(stripped, body_style))
+
+    doc.build(story_elements)
+    pdf_bytes = buf.getvalue()
+
+    safe_id = _re.sub(r"[^a-z0-9]", "-", job_id.lower())[:40]
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="resume-{safe_id}.pdf"'},
+    )
 
 
 @app.get("/api/pipeline/{job_id}/package.txt")

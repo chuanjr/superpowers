@@ -652,7 +652,7 @@
       await fetch('/api/pipeline', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ job_id: jobId, resume_id: RESUME_ID, status: 'recommended' }),
+        body: JSON.stringify({ job_id: jobId, resume_id: RESUME_ID, status: 'triage' }),
       });
       PIPELINE_IDS.add(jobId);
     }
@@ -834,7 +834,7 @@
     const location = job.location ? `<span class="sep">·</span>${escHtml(job.location)}` : '';
 
     const inPipeline = PIPELINE_IDS.has(job.id);
-    const pipelineBtn = `<button class="btn-pipeline${inPipeline ? ' in-pipeline' : ''}" data-id="${escHtml(job.id)}" title="${inPipeline ? 'Remove from pipeline' : 'Add to pipeline'}">${inPipeline ? '✓' : '+'}</button>`;
+    const pipelineBtn = `<button class="btn-pipeline${inPipeline ? ' in-pipeline' : ''}" data-id="${escHtml(job.id)}" title="${inPipeline ? 'Remove from review' : 'Add to review'}">${inPipeline ? '✓ In Review' : '+ Review'}</button>`;
 
     const matchBtn = RESUME_ID
       ? `<button class="btn-match-job" data-match-id="${escHtml(job.id)}" title="Run match score for this job">⟳</button>`

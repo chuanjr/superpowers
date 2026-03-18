@@ -131,6 +131,7 @@ def init_db(path: Path = DB_PATH) -> None:
             job_translation TEXT,
             story_matches   TEXT,
             ats_gap         TEXT,
+            ats_resume      TEXT,
             why_company     TEXT,
             value_prop      TEXT,
             status          TEXT NOT NULL DEFAULT 'pending',
@@ -160,6 +161,11 @@ def init_db(path: Path = DB_PATH) -> None:
     # Migrations for columns added after initial schema
     try:
         conn.execute("ALTER TABLE candidate_culture ADD COLUMN sort_order INTEGER")
+        conn.commit()
+    except Exception:
+        pass  # Column already exists
+    try:
+        conn.execute("ALTER TABLE application_packages ADD COLUMN ats_resume TEXT")
         conn.commit()
     except Exception:
         pass  # Column already exists
@@ -650,7 +656,7 @@ def get_application_package(job_id: str, resume_id: int) -> Optional[dict]:
 def upsert_application_package(job_id: str, resume_id: int, **fields) -> None:
     now = datetime.now(timezone.utc).isoformat()
     allowed = {"culture_score", "culture_signals", "job_translation",
-               "story_matches", "ats_gap", "why_company", "value_prop", "status"}
+               "story_matches", "ats_gap", "ats_resume", "why_company", "value_prop", "status"}
     cols = {k: v for k, v in fields.items() if k in allowed}
 
     with _conn() as conn:

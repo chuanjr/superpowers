@@ -274,6 +274,41 @@ Resume:
     return json.loads(_strip_code_fence(msg.content[0].text))
 
 
+# ── ATS-optimized resume ───────────────────────────────────────────────────────
+
+def generate_ats_resume_sync(resume_raw: str, jd_text: str, ats_gap: dict) -> str:
+    """Rewrite resume bullets to naturally embed missing ATS keywords."""
+    missing = ats_gap.get("missing", [])
+    if not missing:
+        return resume_raw  # Nothing to add
+    client = _get_claude()
+    missing_str = ", ".join(missing)
+    prompt = f"""You are a professional resume editor. Rewrite this resume so that the experience
+bullets naturally incorporate the missing ATS keywords listed below.
+
+Rules:
+- Only rewrite experience/achievement bullet points — keep all other sections (name, contact,
+  education, skills list) exactly as-is
+- Embed the keywords naturally and truthfully — don't fabricate skills the person doesn't have
+- Each bullet must still be a concrete, metric-driven achievement
+- Do NOT add a preamble or commentary — output only the full revised resume text
+- Preserve the exact same section structure and formatting
+
+Missing ATS keywords to incorporate: {missing_str}
+
+Job Description context (for keyword usage):
+{jd_text[:1500]}
+
+Resume:
+{resume_raw[:4000]}"""
+    msg = client.messages.create(
+        model="claude-haiku-4-5-20251001",
+        max_tokens=2000,
+        messages=[{"role": "user", "content": prompt}],
+    )
+    return msg.content[0].text.strip()
+
+
 # ── Why this company ───────────────────────────────────────────────────────────
 
 def write_why_company_sync(culture_dna: dict, culture_signals: dict,
@@ -421,6 +456,12 @@ async def generate_package(job_id: str, resume_id: int,
             write_value_prop_sync, resume_summary, story_matches, job_title, company, jd_text
         )
 
+    ats_resume = None
+    if ats_result and resume_raw:
+        ats_resume = await asyncio.to_thread(
+            generate_ats_resume_sync, resume_raw, jd_text, ats_result
+        )
+
     package = {
         "status":          "done",
         "job_translation": translation,
@@ -430,6 +471,7 @@ async def generate_package(job_id: str, resume_id: int,
         "ats_gap":         json.dumps(ats_result) if ats_result else None,
         "why_company":     why_company,
         "value_prop":      value_prop,
+        "ats_resume":      ats_resume,
     }
 
     upsert_application_package(job_id, resume_id, **package)

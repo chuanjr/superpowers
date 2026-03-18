@@ -19,9 +19,9 @@ import anthropic
 
 
 def normalize_company(company: str) -> str:
-    """Normalize company name to a stable cache key."""
+    """Normalize company name to a stable cache key. Preserves Unicode (e.g. Chinese)."""
     key = company.lower().strip()
-    key = re.sub(r"[^a-z0-9]+", "-", key)
+    key = re.sub(r"[^\w]+", "-", key, flags=re.UNICODE)
     return key.strip("-")
 
 
@@ -187,6 +187,10 @@ def fetch_jd_from_url(url: str) -> str:
                 return _strip_html(desc_html)[:3000]
         except Exception:
             pass
+
+    # LinkedIn blocks scraping and returns a login page — skip it entirely
+    if "linkedin.com" in url:
+        return ""
 
     # Generic fallback: fetch URL and extract text
     _ua = {"User-Agent": _HEADERS_104["User-Agent"]}
