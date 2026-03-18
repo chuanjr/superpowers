@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Setup — Job Search</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; border-radius: 3px; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: #f0ede8;
+    color: #1a1a2e;
+    min-height: 100vh;
+  }
+
+  /* ── Header ── */
+  .page-header {
+    padding: 28px 48px 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+  }
+  .page-header h1 { font-size: 1.6rem; font-weight: 700; }
+  .page-header .subtitle { font-size: 0.85rem; color: #6b7280; margin-top: 3px; }
+  .header-nav { display: flex; gap: 8px; align-items: center; }
+  .nav-link {
+    font-size: 0.82rem; color: #6b7280; text-decoration: none;
+    padding: 5px 12px; border: 1.5px solid #e5e7eb; border-radius: 6px;
+    background: #fff; transition: border-color .12s, color .12s;
+  }
+  .nav-link:hover { border-color: #9ca3af; color: #374151; }
+  .nav-link.active { border-color: #4f46e5; color: #4f46e5; background: #eff6ff; font-weight: 600; }
+
+  /* ── Main layout ── */
+  .main {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 0 24px 48px;
+    display: flex;
+    flex-direction: column;
+    gap: 32px;
+  }
+
+  /* ── Section card ── */
+  .setup-card {
+    background: #fff;
+    border-radius: 14px;
+    border: 1.5px solid #e5e7eb;
+    padding: 28px 28px 24px;
+  }
+  .setup-card h2 {
+    font-size: 1.05rem; font-weight: 700; margin-bottom: 6px;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .setup-card .card-desc {
+    font-size: 0.82rem; color: #6b7280; margin-bottom: 20px; line-height: 1.5;
+  }
+
+  /* ── Resume upload ── */
+  .resume-upload-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 8px 18px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    background: #fff; cursor: pointer;
+    font-size: 0.88rem; color: #374151;
+    transition: border-color .12s, background .12s;
+  }
+  .resume-upload-btn:hover { border-color: #4f8ef7; background: #f0f6ff; }
+  .resume-status { font-size: 0.82rem; margin-top: 10px; color: #6b7280; }
+  .resume-status.processing { color: #d97706; }
+  .resume-status.done { color: #16a34a; }
+  .resume-status.error { color: #dc2626; }
+  .resume-clear-btn {
+    background: none; border: none; cursor: pointer;
+    font-size: 0.78rem; color: #9ca3af; margin-top: 6px; display: none;
+    text-decoration: underline;
+  }
+  .resume-clear-btn:hover { color: #6b7280; }
+
+  /* ── Culture DNA ── */
+  .culture-entries-list { margin-bottom: 16px; }
+  .culture-entry-item {
+    display: flex; align-items: flex-start; gap: 8px;
+    padding: 10px 12px; border: 1.5px solid #e5e7eb; border-radius: 8px;
+    margin-bottom: 8px; background: #fafafa; cursor: grab;
+  }
+  .culture-entry-item:hover { border-color: #d1d5db; }
+  .culture-entry-excerpt { flex: 1; font-size: 0.8rem; color: #374151; line-height: 1.4; }
+  .culture-entry-meta { font-size: 0.7rem; color: #9ca3af; margin-top: 2px; }
+  .entry-actions { display: flex; gap: 4px; flex-shrink: 0; }
+  .btn-entry-edit {
+    font-size: 0.72rem; padding: 2px 8px;
+    border: 1.5px solid #e5e7eb; border-radius: 5px;
+    background: #fff; cursor: pointer;
+  }
+  .btn-entry-edit:hover { border-color: #9ca3af; }
+  .btn-entry-del {
+    font-size: 0.72rem; padding: 2px 8px;
+    border: 1.5px solid #fecaca; border-radius: 5px;
+    background: #fff; color: #dc2626; cursor: pointer;
+  }
+  .btn-entry-del:hover { background: #fef2f2; }
+
+  textarea.culture-input {
+    width: 100%; min-height: 100px;
+    border: 1.5px solid #e5e7eb; border-radius: 8px;
+    padding: 10px 12px; font-size: 0.85rem;
+    font-family: inherit; resize: vertical;
+    outline: none;
+  }
+  textarea.culture-input:focus { border-color: #6366f1; }
+
+  .edit-area {
+    background: #f9fafb; border: 1.5px solid #e5e7eb;
+    border-radius: 8px; padding: 12px; margin-bottom: 12px; display: none;
+  }
+  .edit-area-label { font-size: 0.78rem; color: #6b7280; margin-bottom: 6px; }
+
+  .btn-primary {
+    padding: 7px 18px; border-radius: 7px;
+    background: #4f46e5; color: #fff; border: none;
+    font-size: 0.85rem; font-weight: 600; cursor: pointer;
+    transition: background .12s;
+  }
+  .btn-primary:hover { background: #4338ca; }
+  .btn-primary:disabled { opacity: 0.5; cursor: default; }
+  .btn-secondary {
+    padding: 7px 14px; border-radius: 7px;
+    background: #fff; color: #374151;
+    border: 1.5px solid #e5e7eb;
+    font-size: 0.85rem; cursor: pointer;
+    transition: border-color .12s;
+  }
+  .btn-secondary:hover { border-color: #9ca3af; }
+  .btn-row { display: flex; gap: 8px; margin-top: 10px; }
+
+  /* ── Coach card ── */
+  .coach-link-btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 22px; border-radius: 8px;
+    background: #1a1a2e; color: #fff; text-decoration: none;
+    font-size: 0.9rem; font-weight: 600;
+    transition: background .12s;
+  }
+  .coach-link-btn:hover { background: #2d2d4e; }
+
+  .empty-state {
+    font-size: 0.82rem; color: #9ca3af;
+    padding: 12px 0;
+  }
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <div>
+    <h1>⚙ Setup</h1>
+    <div class="subtitle">Resume, Culture DNA, and Career Coach</div>
+  </div>
+  <div class="header-nav">
+    <a href="/jobs" class="nav-link">Job Board</a>
+    <a href="/review" class="nav-link">Review</a>
+    <a href="/pipeline" class="nav-link">Pipeline</a>
+    <a href="/coach" class="nav-link">Coach</a>
+    <a href="/setup" class="nav-link active">⚙ Setup</a>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- ── Resume ── -->
+  <div class="setup-card" id="card-resume">
+    <h2>📄 Resume</h2>
+    <p class="card-desc">Upload your resume (PDF). It will be parsed and used to score job matches, generate application packages, and personalise coaching.</p>
+    <label class="resume-upload-btn">
+      <input type="file" id="resume-input" accept=".pdf" style="display:none">
+      📄 Upload PDF
+    </label>
+    <div id="resume-status" class="resume-status"></div>
+    <button id="resume-clear" class="resume-clear-btn">Clear resume</button>
+  </div>
+
+  <!-- ── Culture DNA ── -->
+  <div class="setup-card" id="card-culture">
+    <h2>🧬 Culture DNA</h2>
+    <p class="card-desc">Paste notes from your culture discussions — values, likes/dislikes, ideal workplace traits. Drag entries ↕ to set priority (top entries carry most weight when scoring job fit).</p>
+
+    <div class="culture-entries-list" id="culture-entries-list"></div>
+
+    <div class="edit-area" id="culture-edit-area">
+      <div class="edit-area-label">Editing entry</div>
+      <textarea id="culture-edit-input" class="culture-input" rows="4" style="margin-bottom:8px"></textarea>
+      <div class="btn-row">
+        <button class="btn-secondary" id="culture-edit-cancel">Cancel</button>
+        <button class="btn-primary" id="culture-edit-save">Save Changes</button>
+      </div>
+    </div>
+
+    <textarea id="culture-text-input" class="culture-input" rows="4"
+      placeholder="Paste your culture discussion here (values, work style, what you like/dislike)…"></textarea>
+    <div class="btn-row">
+      <button class="btn-primary" id="culture-add-btn">+ Add Entry</button>
+    </div>
+  </div>
+
+  <!-- ── Career Coach ── -->
+  <div class="setup-card" id="card-coach">
+    <h2>💬 Career Coach</h2>
+    <p class="card-desc">Your personal interview coach. Add and refine STAR stories, get evidence-based feedback on your answers, and prep for specific job interviews with tailored practice questions.</p>
+    <a href="/coach" class="coach-link-btn">Open Career Coach →</a>
+  </div>
+
+</div>
+
+<script>
+  'use strict';
+
+  function escHtml(s) {
+    return String(s ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  // ── Resume ─────────────────────────────────────────────────
+
+  let RESUME_ID = null;
+  let RESUME_STATUS = 'none';
+  let _pollTimer = null;
+
+  async function initResume() {
+    try {
+      const res = await fetch('/api/resume/latest');
+      if (res.ok) {
+        const d = await res.json();
+        if (d && d.id) {
+          RESUME_ID = d.id;
+          RESUME_STATUS = d.status || 'done';
+          updateResumeUI();
+          if (RESUME_STATUS === 'processing' || RESUME_STATUS === 'pending') {
+            _pollTimer = setInterval(pollResumeStatus, 4000);
+          }
+        }
+      }
+    } catch (e) { /* ignore */ }
+  }
+
+  async function pollResumeStatus() {
+    try {
+      const res = await fetch('/api/resume/latest');
+      if (!res.ok) return;
+      const d = await res.json();
+      RESUME_STATUS = d.status || 'none';
+      updateResumeUI();
+      if (RESUME_STATUS !== 'processing' && RESUME_STATUS !== 'pending') {
+        clearInterval(_pollTimer); _pollTimer = null;
+      }
+    } catch (e) { /* network hiccup */ }
+  }
+
+  function updateResumeUI() {
+    const el = document.getElementById('resume-status');
+    const clearBtn = document.getElementById('resume-clear');
+    el.className = 'resume-status';
+    if (RESUME_STATUS === 'none') {
+      el.textContent = '';
+      clearBtn.style.display = 'none';
+    } else if (RESUME_STATUS === 'processing' || RESUME_STATUS === 'pending') {
+      el.textContent = 'Analyzing résumé…';
+      el.classList.add('processing');
+      clearBtn.style.display = 'block';
+    } else if (RESUME_STATUS === 'done') {
+      el.textContent = '✓ Resume uploaded and ready';
+      el.classList.add('done');
+      clearBtn.style.display = 'block';
+    } else {
+      const detail = RESUME_STATUS.startsWith('error:') ? RESUME_STATUS.slice(6).trim() : RESUME_STATUS;
+      el.textContent = detail ? `Error: ${detail}` : 'Error — try re-uploading';
+      el.classList.add('error');
+      clearBtn.style.display = 'block';
+    }
+  }
+
+  async function uploadResume(file) {
+    const formData = new FormData();
+    formData.append('file', file);
+    RESUME_STATUS = 'processing';
+    updateResumeUI();
+    try {
+      const res = await fetch('/api/resume/upload', { method: 'POST', body: formData });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Upload failed');
+      RESUME_ID = data.resume_id;
+      if (_pollTimer) clearInterval(_pollTimer);
+      _pollTimer = setInterval(pollResumeStatus, 4000);
+      pollResumeStatus();
+    } catch (e) {
+      RESUME_STATUS = 'error: ' + (e.message || 'Upload failed');
+      updateResumeUI();
+    }
+  }
+
+  document.getElementById('resume-input').addEventListener('change', e => {
+    const file = e.target.files[0];
+    if (file) uploadResume(file);
+    e.target.value = '';
+  });
+  document.getElementById('resume-clear').addEventListener('click', () => {
+    if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
+    RESUME_ID = null; RESUME_STATUS = 'none';
+    updateResumeUI();
+  });
+
+  // ── Culture DNA ────────────────────────────────────────────
+
+  let _cultureEditId = null;
+  let _cultureEntries = [];
+
+  async function loadCultureEntries() {
+    const data = await fetch('/api/candidate/culture').then(r => r.json());
+    _cultureEntries = data.entries || [];
+    const list = document.getElementById('culture-entries-list');
+    if (!_cultureEntries.length) {
+      list.innerHTML = '<div class="empty-state">No culture entries yet. Paste your first entry below.</div>';
+      return;
+    }
+    list.innerHTML = _cultureEntries.map(entry => {
+      const excerpt = (entry.raw_text || '').slice(0, 120).replace(/\n/g, ' ');
+      const parsed = entry.parsed || {};
+      const summary = parsed.summary || '';
+      return `<div class="culture-entry-item" data-culture-id="${entry.culture_id}" draggable="true">
+        <span style="font-size:1rem;color:#9ca3af;cursor:grab;padding-top:2px" title="Drag to reorder">↕</span>
+        <div class="culture-entry-excerpt">
+          <div>${escHtml(excerpt)}${entry.raw_text.length > 120 ? '…' : ''}</div>
+          ${summary
+            ? `<div class="culture-entry-meta">${escHtml(summary.slice(0, 100))}</div>`
+            : '<div class="culture-entry-meta" style="font-style:italic">Parsing…</div>'}
+        </div>
+        <div class="entry-actions">
+          <button class="btn-entry-edit" data-action="culture-edit" data-culture-id="${entry.culture_id}">Edit</button>
+          <button class="btn-entry-del" data-action="culture-delete" data-culture-id="${entry.culture_id}">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    // Drag-to-reorder
+    let dragSrcId = null;
+    list.querySelectorAll('[draggable]').forEach(el => {
+      el.addEventListener('dragstart', () => { dragSrcId = el.dataset.cultureId; el.style.opacity = '0.4'; });
+      el.addEventListener('dragend',   () => { el.style.opacity = '1'; });
+      el.addEventListener('dragover',  e  => { e.preventDefault(); });
+      el.addEventListener('drop', async e => {
+        e.preventDefault();
+        if (!dragSrcId || dragSrcId === el.dataset.cultureId) return;
+        const fromIdx = _cultureEntries.findIndex(c => String(c.culture_id) === dragSrcId);
+        const toIdx   = _cultureEntries.findIndex(c => String(c.culture_id) === el.dataset.cultureId);
+        if (fromIdx < 0 || toIdx < 0) return;
+        const [moved] = _cultureEntries.splice(fromIdx, 1);
+        _cultureEntries.splice(toIdx, 0, moved);
+        const res = await fetch('/api/candidate/culture/reorder', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ordered_ids: _cultureEntries.map(c => c.culture_id) }),
+        }).catch(() => null);
+        if (!res || !res.ok) {
+          _cultureEntries.splice(toIdx, 1);
+          _cultureEntries.splice(fromIdx, 0, moved);
+        }
+        await loadCultureEntries();
+      });
+    });
+
+    list.querySelectorAll('[data-action="culture-edit"]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const cid = Number(btn.dataset.cultureId);
+        const entry = _cultureEntries.find(c => c.culture_id === cid);
+        if (!entry) return;
+        _cultureEditId = cid;
+        document.getElementById('culture-edit-input').value = entry.raw_text;
+        document.getElementById('culture-edit-area').style.display = 'block';
+        document.getElementById('culture-text-input').style.display = 'none';
+        document.getElementById('culture-add-btn').style.display = 'none';
+      });
+    });
+
+    list.querySelectorAll('[data-action="culture-delete"]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        if (!confirm('Delete this culture entry?')) return;
+        await fetch(`/api/candidate/culture/${btn.dataset.cultureId}`, { method: 'DELETE' });
+        await loadCultureEntries();
+      });
+    });
+  }
+
+  document.getElementById('culture-edit-cancel').addEventListener('click', () => {
+    document.getElementById('culture-edit-area').style.display = 'none';
+    document.getElementById('culture-text-input').style.display = '';
+    document.getElementById('culture-add-btn').style.display = '';
+    _cultureEditId = null;
+  });
+
+  document.getElementById('culture-edit-save').addEventListener('click', async () => {
+    const text = document.getElementById('culture-edit-input').value.trim();
+    if (!text || !_cultureEditId) return;
+    const btn = document.getElementById('culture-edit-save');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    await fetch(`/api/candidate/culture/${_cultureEditId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw_text: text }),
+    });
+    btn.disabled = false; btn.textContent = 'Save Changes';
+    document.getElementById('culture-edit-area').style.display = 'none';
+    document.getElementById('culture-text-input').style.display = '';
+    document.getElementById('culture-add-btn').style.display = '';
+    _cultureEditId = null;
+    await loadCultureEntries();
+  });
+
+  document.getElementById('culture-add-btn').addEventListener('click', async () => {
+    const text = document.getElementById('culture-text-input').value.trim();
+    if (!text) return;
+    const btn = document.getElementById('culture-add-btn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    await fetch('/api/candidate/culture', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ raw_text: text }),
+    });
+    document.getElementById('culture-text-input').value = '';
+    btn.disabled = false; btn.textContent = '+ Add Entry';
+    await loadCultureEntries();
+  });
+
+  // ── Init ───────────────────────────────────────────────────
+  initResume();
+  loadCultureEntries();
+</script>
+</body>
+</html>

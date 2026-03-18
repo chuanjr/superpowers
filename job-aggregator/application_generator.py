@@ -277,33 +277,42 @@ Resume:
 # ── ATS-optimized resume ───────────────────────────────────────────────────────
 
 def generate_ats_resume_sync(resume_raw: str, jd_text: str, ats_gap: dict) -> str:
-    """Rewrite resume bullets to naturally embed missing ATS keywords."""
+    """Rewrite resume bullets using the interview-coach-skill methodology + ATS keyword embedding."""
     missing = ats_gap.get("missing", [])
-    if not missing:
-        return resume_raw  # Nothing to add
     client = _get_claude()
-    missing_str = ", ".join(missing)
-    prompt = f"""You are a professional resume editor. Rewrite this resume so that the experience
-bullets naturally incorporate the missing ATS keywords listed below.
+    missing_str = ", ".join(missing) if missing else "(none — focus on quality uplift only)"
+    prompt = f"""You are an expert resume coach using the interview-coach-skill methodology.
+Rewrite this resume's experience bullets so they are optimized for THIS specific job.
+
+COACHING DIMENSIONS — maximise all 5 for each bullet:
+1. Substance: specific evidence and quantified results
+2. Structure: clear Action → Method → Outcome arc
+3. Relevance: directly address THIS job's key requirements
+4. Credibility: real, provable claims (numbers, scale, scope)
+5. Differentiation: only THIS candidate could say this (earned insight or unique context)
+
+ATS KEYWORDS TO EMBED (incorporate naturally): {missing_str}
 
 Rules:
-- Only rewrite experience/achievement bullet points — keep all other sections (name, contact,
-  education, skills list) exactly as-is
-- Embed the keywords naturally and truthfully — don't fabricate skills the person doesn't have
-- Each bullet must still be a concrete, metric-driven achievement
-- Do NOT add a preamble or commentary — output only the full revised resume text
-- Preserve the exact same section structure and formatting
+- Only rewrite experience/achievement bullet points
+- Keep all other content (name, contact, education, skills list, dates) exactly as-is
+- Never fabricate credentials or metrics not implied by the original resume
+- Output ONLY the complete revised resume — no preamble, no commentary
 
-Missing ATS keywords to incorporate: {missing_str}
+FORMAT the output as structured markdown so it can be rendered as a PDF:
+- First line: candidate full name only
+- Section headers: ## SECTION NAME  (e.g., ## EXPERIENCE, ## EDUCATION, ## SKILLS)
+- Bullet points: - bullet text
+- Other lines (job title, company, dates, contact): plain text
 
-Job Description context (for keyword usage):
+Job Description (for relevance and keyword context):
 {jd_text[:1500]}
 
 Resume:
 {resume_raw[:4000]}"""
     msg = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=2000,
+        max_tokens=2500,
         messages=[{"role": "user", "content": prompt}],
     )
     return msg.content[0].text.strip()

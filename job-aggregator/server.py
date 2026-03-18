@@ -12,12 +12,13 @@ import sys
 import threading
 from pathlib import Path
 from typing import Optional
+from fastapi import Response
 
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
 from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 import uvicorn
 
@@ -552,6 +553,7 @@ async def pipeline_culture_check(job_id: str, background_tasks: BackgroundTasks)
                 status="done",
             )
         except Exception as exc:
+            import traceback; traceback.print_exc()
             upsert_application_package(
                 job_id, resume["id"],
                 status="error",
@@ -650,13 +652,17 @@ async def generate_package_endpoint(job_id: str, background_tasks: BackgroundTas
         import asyncio
         from application_generator import generate_package
         try:
+            # Auto-fetch JD from URL if description is missing
+            refreshed_jd = await _ensure_job_description(job_id, job)
+            refreshed_job = {**job, "description": refreshed_jd} if refreshed_jd else job
             await asyncio.wait_for(
-                generate_package(job_id, resume["id"], job, resume),
+                generate_package(job_id, resume["id"], refreshed_job, resume),
                 timeout=120.0,
             )
         except asyncio.TimeoutError:
             _pkg_tasks[job_id]["error"] = "Generation timed out after 2 minutes. Please try again."
         except Exception as exc:
+            import traceback; traceback.print_exc()
             _pkg_tasks[job_id]["error"] = str(exc)
         finally:
             _pkg_tasks[job_id]["running"] = False
@@ -677,6 +683,7 @@ async def download_resume_pdf(job_id: str, body: dict) -> Response:
     from reportlab.pdfbase import pdfmetrics
     from reportlab.pdfbase.ttfonts import TTFont
 
+    import html as _html_mod
     content = (body.get("content") or "").strip()
     if not content:
         raise HTTPException(400, "content is required")
@@ -726,24 +733,27 @@ async def download_resume_pdf(job_id: str, body: dict) -> Response:
 
         if first_line:
             # First non-blank line = candidate name
-            story_elements.append(Paragraph(stripped, name_style))
+            story_elements.append(Paragraph(_html_mod.escape(stripped), name_style))
             story_elements.append(Spacer(1, 2))
             first_line = False
             continue
 
         if stripped.startswith("## "):
             section_title = stripped[3:].strip()
-            story_elements.append(Paragraph(section_title.upper(), section_style))
+            story_elements.append(Paragraph(_html_mod.escape(section_title).upper(), section_style))
         elif stripped.startswith("# "):
             section_title = stripped[2:].strip()
-            story_elements.append(Paragraph(section_title.upper(), section_style))
+            story_elements.append(Paragraph(_html_mod.escape(section_title).upper(), section_style))
         elif stripped.startswith("- ") or stripped.startswith("• "):
             bullet_text = stripped[2:].strip()
-            story_elements.append(Paragraph(f"• {bullet_text}", bullet_style))
+            story_elements.append(Paragraph(f"• {_html_mod.escape(bullet_text)}", bullet_style))
         else:
-            story_elements.append(Paragraph(stripped, body_style))
+            story_elements.append(Paragraph(_html_mod.escape(stripped), body_style))
 
-    doc.build(story_elements)
+    try:
+        doc.build(story_elements)
+    except Exception as exc:
+        raise HTTPException(500, f"PDF generation error: {exc}")
     pdf_bytes = buf.getvalue()
 
     safe_id = _re.sub(r"[^a-z0-9]", "-", job_id.lower())[:40]
@@ -1185,6 +1195,11 @@ def coach_page() -> FileResponse:
 @app.get("/review")
 def review_page() -> FileResponse:
     return FileResponse(str(_STATIC / "review.html"))
+
+
+@app.get("/setup")
+def setup_page() -> FileResponse:
+    return FileResponse(str(_STATIC / "setup.html"))
 
 
 # ── Company culture research endpoints ──────────────────────────────────────────

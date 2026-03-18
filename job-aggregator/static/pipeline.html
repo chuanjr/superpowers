@@ -483,8 +483,7 @@
   <div style="display:flex;align-items:center;gap:16px">
     <div class="updated" id="header-updated"></div>
     <div class="header-actions">
-      <button class="btn-header-action" id="btn-culture-dna">⚙ Culture DNA</button>
-      <a href="/coach" class="btn-header-action">💬 Coach</a>
+      <a href="/setup" class="btn-header-action">⚙ Setup</a>
     </div>
   </div>
 </div>
@@ -548,28 +547,6 @@
       <tr><td colspan="9"><div class="empty">Loading…</div></td></tr>
     </tbody>
   </table>
-</div>
-
-<!-- ── Culture DNA Modal ── -->
-<div class="modal-overlay hidden" id="culture-modal">
-  <div class="modal" style="width:560px;max-width:95vw">
-    <h3>⚙ Culture DNA</h3>
-    <p style="font-size:0.82rem;color:#6b7280;margin-bottom:16px">Paste your culture discussion (values, likes/dislikes, ideal workplace). Drag ↕ to reorder priority — top entries carry most weight.</p>
-    <div class="culture-entries-list" id="culture-entries-list" style="max-height:280px;overflow-y:auto;margin-bottom:12px"></div>
-    <div id="culture-edit-area" style="display:none;background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:8px;padding:12px;margin-bottom:12px">
-      <div style="font-size:0.78rem;color:#6b7280;margin-bottom:6px">Editing entry</div>
-      <textarea id="culture-edit-input" class="pkg-textarea" rows="4" style="margin-bottom:8px"></textarea>
-      <div style="display:flex;gap:8px">
-        <button class="btn-cancel" id="culture-edit-cancel" style="font-size:0.8rem;padding:5px 12px">Cancel</button>
-        <button class="btn-confirm" id="culture-edit-save" style="font-size:0.8rem;padding:5px 12px">Save Changes</button>
-      </div>
-    </div>
-    <textarea id="culture-text-input" class="pkg-textarea" rows="4" placeholder="Paste culture discussion here…"></textarea>
-    <div class="modal-btns" style="margin-top:12px">
-      <button class="btn-cancel" id="culture-modal-close">Close</button>
-      <button class="btn-confirm" id="culture-modal-save">+ Add Entry</button>
-    </div>
-  </div>
 </div>
 
 <!-- ── Application Package Drawer ── -->
@@ -967,150 +944,6 @@
       e.currentTarget.classList.add('hidden');
       _fbJob = _fbRating = null;
     }
-  });
-
-  // ── Culture DNA Modal ──────────────────────────────────────
-
-  let _cultureEditId = null;
-  let _cultureEntries = [];  // cached for drag-reorder
-
-  async function loadCultureEntries() {
-    const data = await fetch('/api/candidate/culture').then(r => r.json());
-    _cultureEntries = data.entries || [];
-    const list = document.getElementById('culture-entries-list');
-    if (!_cultureEntries.length) {
-      list.innerHTML = '<div style="font-size:0.8rem;color:#9ca3af">No culture entries yet.</div>';
-      return;
-    }
-    list.innerHTML = _cultureEntries.map((entry, i) => {
-      const excerpt = (entry.raw_text || '').slice(0, 100).replace(/\n/g, ' ');
-      const parsed = entry.parsed || {};
-      const summary = parsed.summary || '';
-      return `<div class="culture-entry-item" data-culture-id="${entry.culture_id}" draggable="true"
-        style="display:flex;align-items:flex-start;gap:8px;padding:8px;border:1.5px solid #e5e7eb;border-radius:7px;margin-bottom:6px;background:#fff;cursor:grab">
-        <span style="font-size:1rem;color:#9ca3af;cursor:grab;padding-top:2px" title="Drag to reorder">↕</span>
-        <div style="flex:1;min-width:0">
-          <div style="font-size:0.8rem;color:#374151">${escHtml(excerpt)}${entry.raw_text.length > 100 ? '…' : ''}</div>
-          ${summary ? `<div style="font-size:0.72rem;color:#6b7280;margin-top:2px">${escHtml(summary.slice(0,90))}</div>` : '<div style="font-size:0.72rem;color:#9ca3af;margin-top:2px">Parsing…</div>'}
-        </div>
-        <div style="display:flex;gap:4px;flex-shrink:0">
-          <button data-action="culture-edit" data-culture-id="${entry.culture_id}"
-            style="font-size:0.72rem;padding:2px 8px;border:1.5px solid #e5e7eb;border-radius:5px;background:#fff;cursor:pointer">Edit</button>
-          <button data-action="culture-delete" data-culture-id="${entry.culture_id}"
-            style="font-size:0.72rem;padding:2px 8px;border:1.5px solid #fecaca;border-radius:5px;background:#fff;color:#dc2626;cursor:pointer">✕</button>
-        </div>
-      </div>`;
-    }).join('');
-
-    // Drag-to-reorder
-    let dragSrcId = null;
-    list.querySelectorAll('[draggable]').forEach(el => {
-      el.addEventListener('dragstart', () => { dragSrcId = el.dataset.cultureId; el.style.opacity = '0.4'; });
-      el.addEventListener('dragend', () => { el.style.opacity = '1'; });
-      el.addEventListener('dragover', e => { e.preventDefault(); });
-      el.addEventListener('drop', async e => {
-        e.preventDefault();
-        if (!dragSrcId || dragSrcId === el.dataset.cultureId) return;
-        // Reorder _cultureEntries
-        const fromIdx = _cultureEntries.findIndex(c => String(c.culture_id) === dragSrcId);
-        const toIdx   = _cultureEntries.findIndex(c => String(c.culture_id) === el.dataset.cultureId);
-        if (fromIdx < 0 || toIdx < 0) return;
-        const [moved] = _cultureEntries.splice(fromIdx, 1);
-        _cultureEntries.splice(toIdx, 0, moved);
-        const res = await fetch('/api/candidate/culture/reorder', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ordered_ids: _cultureEntries.map(c => c.culture_id) }),
-        }).catch(() => null);
-        if (!res || !res.ok) {
-          // Revert local mutation on failure
-          _cultureEntries.splice(toIdx, 1);
-          _cultureEntries.splice(fromIdx, 0, moved);
-        }
-        await loadCultureEntries();
-      });
-    });
-
-    // Edit / delete buttons
-    list.querySelectorAll('[data-action="culture-edit"]').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const cid = Number(btn.dataset.cultureId);
-        const entry = _cultureEntries.find(c => c.culture_id === cid);
-        if (!entry) return;
-        _cultureEditId = cid;
-        document.getElementById('culture-edit-input').value = entry.raw_text;
-        document.getElementById('culture-edit-area').style.display = 'block';
-        document.getElementById('culture-text-input').style.display = 'none';
-        document.getElementById('culture-modal-save').style.display = 'none';
-      });
-    });
-
-    list.querySelectorAll('[data-action="culture-delete"]').forEach(btn => {
-      btn.addEventListener('click', async () => {
-        if (!confirm('Delete this culture entry?')) return;
-        await fetch(`/api/candidate/culture/${btn.dataset.cultureId}`, { method: 'DELETE' });
-        await loadCultureEntries();
-      });
-    });
-  }
-
-  document.getElementById('culture-edit-cancel').addEventListener('click', () => {
-    document.getElementById('culture-edit-area').style.display = 'none';
-    document.getElementById('culture-text-input').style.display = '';
-    document.getElementById('culture-modal-save').style.display = '';
-    _cultureEditId = null;
-  });
-
-  document.getElementById('culture-edit-save').addEventListener('click', async () => {
-    const text = document.getElementById('culture-edit-input').value.trim();
-    if (!text || !_cultureEditId) return;
-    const btn = document.getElementById('culture-edit-save');
-    btn.disabled = true; btn.textContent = 'Saving…';
-    await fetch(`/api/candidate/culture/${_cultureEditId}`, {
-      method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw_text: text }),
-    });
-    btn.disabled = false; btn.textContent = 'Save Changes';
-    document.getElementById('culture-edit-area').style.display = 'none';
-    document.getElementById('culture-text-input').style.display = '';
-    document.getElementById('culture-modal-save').style.display = '';
-    _cultureEditId = null;
-    await loadCultureEntries();
-  });
-
-  document.getElementById('btn-culture-dna').addEventListener('click', async () => {
-    document.getElementById('culture-modal').classList.remove('hidden');
-    await loadCultureEntries();
-  });
-
-  function _closeCultureModal() {
-    document.getElementById('culture-modal').classList.add('hidden');
-    document.getElementById('culture-edit-area').style.display = 'none';
-    document.getElementById('culture-text-input').style.display = '';
-    document.getElementById('culture-modal-save').style.display = '';
-    _cultureEditId = null;
-  }
-
-  document.getElementById('culture-modal-close').addEventListener('click', _closeCultureModal);
-
-  document.getElementById('culture-modal-save').addEventListener('click', async () => {
-    const text = document.getElementById('culture-text-input').value.trim();
-    if (!text) return;
-    const btn = document.getElementById('culture-modal-save');
-    btn.disabled = true; btn.textContent = 'Saving…';
-    await fetch('/api/candidate/culture', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ raw_text: text }),
-    });
-    document.getElementById('culture-text-input').value = '';
-    btn.disabled = false; btn.textContent = '+ Add Entry';
-    await loadCultureEntries();
-  });
-
-  document.getElementById('culture-modal').addEventListener('click', e => {
-    if (e.target === e.currentTarget) _closeCultureModal();
   });
 
   // ── Application Package Drawer ─────────────────────────────
