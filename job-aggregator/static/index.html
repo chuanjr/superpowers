@@ -483,10 +483,14 @@
   position:fixed;top:0;left:0;right:0;z-index:9999;
   background:#fef3c7;border-bottom:2px solid #f59e0b;
   padding:10px 20px;display:flex;align-items:center;gap:12px;font-size:0.88rem">
-  <span>⚠️ <strong>Gmail token expired</strong> — email alert jobs are not being fetched.</span>
-  <span style="color:#6b7280">Run <code style="background:#fde68a;padding:2px 6px;border-radius:4px">venv/bin/python setup_gmail_auth.py</code> to re-authenticate, then refresh.</span>
-  <button onclick="document.getElementById('gmail-auth-banner').classList.add('hidden')"
-    style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:1.1rem;color:#92400e">✕</button>
+  <span>⚠️ <strong>Gmail token expired</strong> — LinkedIn &amp; Indeed email alerts are not being fetched.</span>
+  <button id="gmail-reauth-btn" onclick="reconnectGmail()" style="
+    padding:4px 14px;background:#f59e0b;color:#fff;border:none;border-radius:6px;
+    cursor:pointer;font-size:0.82rem;font-weight:600;white-space:nowrap">
+    🔗 Reconnect Gmail
+  </button>
+  <span id="gmail-reauth-status" style="font-size:0.8rem;color:#92400e"></span>
+  <button style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:1.1rem;color:#92400e">✕</button>
 </div>
 
 <!-- ── CakeResume Auth Modal ── -->
@@ -1158,8 +1162,58 @@
 
   document.getElementById('btn-refresh').addEventListener('click', startRefresh);
 
+  // Track whether user dismissed the banner this session — X should always stick
+  let _gmailBannerDismissed = false;
+
+  function hideGmailBanner() {
+    _gmailBannerDismissed = true;
+    document.getElementById('gmail-auth-banner').classList.add('hidden');
+  }
+
   function showGmailAuthBanner() {
+    // Never re-show if user dismissed or if we already know it's connected
+    if (_gmailBannerDismissed) return;
     document.getElementById('gmail-auth-banner').classList.remove('hidden');
+  }
+
+  // Replace inline onclick on X button with a proper handler
+  document.getElementById('gmail-auth-banner')
+    .querySelector('button:last-child')
+    .addEventListener('click', hideGmailBanner);
+
+  // Check real token status on page load
+  (async () => {
+    try {
+      const r = await fetch('/api/gmail/status');
+      const d = await r.json();
+      if (!d.connected) showGmailAuthBanner();
+    } catch { /* offline — don't show banner */ }
+  })();
+
+  async function reconnectGmail() {
+    const btn = document.getElementById('gmail-reauth-btn');
+    const status = document.getElementById('gmail-reauth-status');
+    btn.disabled = true;
+    btn.textContent = '⏳ Opening browser…';
+    status.textContent = 'A browser window will open — sign in and approve access.';
+    try {
+      const res = await fetch('/api/gmail/reauth', { method: 'POST' });
+      const data = await res.json();
+      if (data.ok) {
+        btn.textContent = '✓ Connected';
+        status.textContent = 'Gmail reconnected!';
+        _gmailBannerDismissed = true;
+        setTimeout(() => hideGmailBanner(), 1500);
+      } else {
+        btn.disabled = false;
+        btn.textContent = '🔗 Reconnect Gmail';
+        status.textContent = 'Failed: ' + (data.error || 'unknown error');
+      }
+    } catch {
+      btn.disabled = false;
+      btn.textContent = '🔗 Reconnect Gmail';
+      status.textContent = 'Request failed — is the server running?';
+    }
   }
 
   // ── CakeResume Auth Modal ──────────────────────────────────

@@ -248,6 +248,55 @@ def jobs_refresh_status() -> JSONResponse:
     })
 
 
+@app.get("/api/gmail/status")
+def gmail_status() -> JSONResponse:
+    """Check whether Gmail credentials are valid without triggering a refresh."""
+    from pathlib import Path
+    token_path = Path("credentials/token.json")
+    if not token_path.exists():
+        return JSONResponse({"connected": False, "reason": "no_token"})
+    try:
+        from google.oauth2.credentials import Credentials
+        from google.auth.transport.requests import Request
+        creds = Credentials.from_authorized_user_file(str(token_path))
+        if creds.valid:
+            _refresh_state["gmail_auth_needed"] = False
+            return JSONResponse({"connected": True})
+        if creds.expired and creds.refresh_token:
+            creds.refresh(Request())
+            token_path.write_text(creds.to_json())
+            _refresh_state["gmail_auth_needed"] = False
+            return JSONResponse({"connected": True})
+        return JSONResponse({"connected": False, "reason": "expired"})
+    except Exception as exc:
+        return JSONResponse({"connected": False, "reason": str(exc)})
+
+
+@app.post("/api/gmail/reauth")
+async def gmail_reauth() -> JSONResponse:
+    """Run Gmail OAuth flow — opens a browser window on the local machine."""
+    import asyncio, subprocess, sys
+    try:
+        result = await asyncio.wait_for(
+            asyncio.to_thread(
+                lambda: subprocess.run(
+                    [sys.executable, "setup_gmail_auth.py"],
+                    capture_output=True, text=True,
+                )
+            ),
+            timeout=300.0,  # 5 min for user to complete OAuth
+        )
+        if result.returncode == 0:
+            _refresh_state["gmail_auth_needed"] = False
+            return JSONResponse({"ok": True})
+        else:
+            return JSONResponse({"ok": False, "error": result.stderr or result.stdout})
+    except asyncio.TimeoutError:
+        return JSONResponse({"ok": False, "error": "Timed out — did you complete the sign-in?"})
+    except Exception as e:
+        return JSONResponse({"ok": False, "error": str(e)})
+
+
 @app.post("/api/auth/cakeresume")
 def start_cakeresume_auth() -> JSONResponse:
     """Trigger the CakeResume re-authentication flow (opens browser window)."""

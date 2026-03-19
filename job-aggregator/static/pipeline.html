@@ -1091,6 +1091,7 @@
     document.getElementById('pkg-drawer').classList.add('open');
     document.getElementById('pkg-gen-status').textContent = '';
     loadPackage(jobId);
+    populateWhyPrompts();
   }
 
   function closePkgDrawer() {
@@ -1174,15 +1175,6 @@
         <div class="pkg-chips">${chips}</div>`);
     }
 
-    if (Array.isArray(data.story_matches) && data.story_matches.length) {
-      const storyHtml = data.story_matches.map(s => `
-        <div class="story-match">
-          <div class="story-match-id">[${escHtml(s.story_id || '')}] ${escHtml(s.competency || '')}</div>
-          <div class="story-match-bullet">• ${escHtml(s.bullet || '')}</div>
-          <button class="copy-btn" onclick="copyText(this, ${JSON.stringify(s.bullet || '')})">⎘ Copy bullet</button>
-        </div>`).join('');
-      html += section('Tailored Resume Bullets', storyHtml);
-    }
 
     if (data.ats_gap) {
       const ats = data.ats_gap;
@@ -1253,16 +1245,10 @@
     if (data.value_prop) {
       html += section('Value Prop / Cover Letter', `
         <textarea class="pkg-textarea" id="pkg-value-prop">${escHtml(data.value_prop)}</textarea>
-        <div style="margin-top:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px">
-          <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:6px">✏️ 讓故事更真實 — 告訴 AI 你為什麼真的在乎這個機會</div>
-          <div style="font-size:0.73rem;color:#6b7280;margin-bottom:8px;line-height:1.5">
-            用你自己的話回答以下任何問題（不用全部回答）：<br>
-            • 為什麼是這家公司，而不是其他類似的公司？<br>
-            • 你有用過他們的產品嗎？你注意到什麼？<br>
-            • 他們的文化、使命或做事方式，有哪一點和你的價值觀很像？<br>
-            • 這個職缺的哪個具體面向，和你之前做過的事情很呼應？
-          </div>
-          <textarea id="pkg-why-input" rows="3" placeholder="e.g. 我一直在用他們的產品，發現他們在 growth loop 的設計上有個很有趣的地方…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;font-family:inherit;resize:vertical;line-height:1.5;color:#374151"></textarea>
+        <div id="pkg-why-block" style="margin-top:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px">
+          <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:4px">✏️ Why do you actually care? <span style="font-weight:400;color:#9ca3af">(makes the letter specific to you)</span></div>
+          <div id="pkg-why-prompts" style="font-size:0.73rem;color:#6b7280;margin-bottom:8px;line-height:1.8"></div>
+          <textarea id="pkg-why-input" rows="3" placeholder="Answer in English — pick any prompt above that resonates, or just say whatever comes to mind." style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;font-family:inherit;resize:vertical;line-height:1.5;color:#374151"></textarea>
         </div>
         <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
           <button class="copy-btn" onclick="copyField('pkg-value-prop', this)">⎘ Copy</button>
@@ -1300,10 +1286,14 @@
           });
           const d = await res.json();
           if (!res.ok) { alert(d.detail || 'Upload failed'); return; }
-          if (label) label.innerHTML = `<input type="file" id="pkg-custom-resume-input" accept=".pdf" style="display:none">📄 ${escHtml(d.filename)}`;
+          if (label) label.textContent = `📄 ${d.filename}`;
           // Reload package to show updated resume text
-          await renderPkgDrawer(_pkgJobId);
-        } catch { if (label) label.textContent = '⬆ Upload position resume'; alert('Upload failed'); }
+          await loadPackage(_pkgJobId);
+        } catch(err) {
+          console.error('Upload error:', err);
+          if (label) label.textContent = '⬆ Upload position resume';
+          alert('Upload failed: ' + (err.message || err));
+        }
       });
     }
 
@@ -1312,6 +1302,40 @@
       const entry = ALL_ENTRIES.find(e => e.job_id === _pkgJobId);
       if (entry) { entry.culture_score = data.culture_score; render(); }
     }
+
+    // Populate dynamic why-prompts based on current job
+    populateWhyPrompts();
+  }
+
+  function populateWhyPrompts() {
+    const promptsEl = document.getElementById('pkg-why-prompts');
+    if (!promptsEl || !_pkgJobId) return;
+    const entry = ALL_ENTRIES.find(e => e.job_id === _pkgJobId);
+    const co = (entry?.company || 'this company').trim();
+    const role = (entry?.title || 'this role').trim();
+    // Extract role type for smarter questions (e.g. "Growth PM" → growth, monetization)
+    const roleLC = role.toLowerCase();
+    const isGrowth   = /growth|monetiz|acqui|retention/.test(roleLC);
+    const isConsumer = /consumer|social|content|community|platform/.test(roleLC);
+    const is0to1     = /0.to.1|new product|launch|incubat/.test(roleLC);
+    const isB2B      = /b2b|enterprise|saas|platform|business/.test(roleLC);
+
+    const prompts = [
+      `Why <strong>${co}</strong> specifically — what made you save this, not a similar role somewhere else?`,
+      isGrowth
+        ? `Have you noticed something about how <strong>${co}</strong> grows or retains users that most PMs would miss?`
+        : isConsumer
+          ? `Have you used <strong>${co}</strong>'s product? What's one thing you'd change if you owned it?`
+          : `Is there a specific product decision <strong>${co}</strong> made that you find interesting or worth copying?`,
+      is0to1
+        ? `What's a problem you've seen <strong>${co}</strong> hasn't solved yet that you'd actually want to work on?`
+        : isB2B
+          ? `What do you think <strong>${co}</strong> gets right about their market that competitors miss?`
+          : `What do you think <strong>${co}</strong> is doing better than their competitors — or getting wrong?`,
+      `Is there something about the way <strong>${co}</strong> operates — speed, culture, how they ship — that matches how you work?`,
+    ];
+
+    promptsEl.innerHTML = prompts.map(p => `<div style="margin-bottom:2px">→ ${p}</div>`).join('');
   }
 
   function section(title, content) {

@@ -1009,49 +1009,82 @@ JD context:
 def write_value_prop_sync(resume_summary: str, story_matches: list[dict],
                            job_title: str, company: str, jd_text: str,
                            user_why: str = "") -> str:
-    """Write a human cover letter opening grounded in real achievements."""
+    """Write a full cover letter following the 5-paragraph framework."""
     client = _get_claude()
-    top_bullets = "\n".join(f"- {s['bullet']}" for s in story_matches[:4])
-    why_block = f"""
-The candidate shared why they genuinely care about this role:
-\"\"\"{user_why.strip()}\"\"\"
-Use this to make the closing sentence more specific and authentic.
-""" if user_why.strip() else ""
     _name = _candidate_name()
-    prompt = f"""You are {_name} writing a cover letter opening paragraph for a specific job.
-Write in first person. Sound like a real person talking to another person, not a corporate document.
 
-VOICE RULES — all required:
-- Use contractions (I've, I'm, it's, that's, didn't, wasn't)
-- Start with a specific story or result, not "I am excited" or "I am writing to apply"
-- No filler phrases: "passionate about", "proven track record", "leverage my expertise", "I would love to"
-- No em dashes. Short sentences are fine. Mix sentence lengths.
-- Maximum 3-4 sentences. Every sentence must earn its place.
-- Write like you're telling a colleague what you're good at — specific, direct, honest.
+    # Top 2 stories with full detail for paragraph selection
+    story_block = ""
+    for i, s in enumerate(story_matches[:2], 1):
+        story_block += f"Story {i}: {s.get('bullet', '')}"
+        if s.get('detail'):
+            story_block += f"\n  Context: {s['detail'][:300]}"
+        story_block += "\n"
 
-BANNED WORDS — never use these, they sound like AI:
-obsessing, obsession, obsess, perfected, perfect match, this obsession, deeply passionate,
-thrilled, excited to, honored to, humbled, synergy, impactful, journey, transformative
+    why_block = f"""
+The candidate shared a genuine personal connection to this company/role:
+\"\"\"{user_why.strip()}\"\"\"
+Use this directly in Paragraph 5 (Why here, why now).
+""" if user_why.strip() else ""
 
-WHAT TO WRITE:
-1. Open with the single most relevant achievement (number + mechanism, not just result)
-2. Connect it to what this role actually needs
-3. One sentence on what makes you different — something surprising or counter-intuitive
+    prompt = f"""You are writing a cover letter in first person for {_name} applying for {job_title} at {company}.
+
+Write exactly 4-5 short paragraphs following this structure. Total length: 250-350 words.
+
+━━━ STRUCTURE ━━━
+
+PARAGRAPH 1 — Why this company (2-3 sentences)
+Start with a specific observation about {company}'s product, a decision they made, or a problem they're solving that the candidate genuinely finds interesting.
+NOT: "I am excited to apply." NOT: "I admire your mission."
+The hiring manager should feel this was written specifically for them.
+
+PARAGRAPH 2 — The core story (4-6 sentences)
+Tell the single most relevant story from the story bank.
+Order: why they did it (motivation) → what they did (action) → what happened (result with numbers).
+Do not summarize. Tell it like it happened.
+
+PARAGRAPH 3 — The logical connection (1-2 sentences)
+Connect what the candidate has done to what {company} needs for this role.
+State the logic, not the conclusion. Do NOT write "therefore I believe I am the ideal candidate."
+
+PARAGRAPH 4 — Why here, why now (2-3 sentences)
+Specific reason why they want to work on this problem at {company} rather than elsewhere.
+Reference product quality, culture, a specific decision they made, or a gap they see.
 {why_block}
+━━━ VOICE RULES ━━━
+- Use contractions (I've, I'm, it's, didn't)
+- Direct and opinionated, not overselling
+- If a sentence sounds like it's selling, rewrite it as a factual observation
+- No em dashes anywhere — use commas or periods
+
+━━━ BANNED WORDS — never use ━━━
+excited to, passionate about, strong track record, proven ability, I believe, I am confident,
+I would be a great fit, leverage my experience, highly motivated, results-driven,
+obsessing, obsession, perfected, thrilled, honored, humbled, synergy, impactful, journey, transformative
+
+━━━ QUALITY CHECKS before outputting ━━━
+1. Does paragraph 1 make it clear why the candidate cares about {company} specifically?
+2. Is there at least one specific number or outcome in paragraph 2?
+3. Could any other PM have written each sentence? If yes, make it more specific.
+4. Is it under 350 words?
+
+━━━ INPUT ━━━
+
 Candidate background:
 {resume_summary}
 
-Specific achievements for this role:
-{top_bullets}
+Most relevant stories:
+{story_block}
 
-Target: {job_title} at {company}
-What the role needs:
-{jd_text[:800]}
+Target role: {job_title} at {company}
+JD context (what this team needs):
+{jd_text[:1200]}
 
-Output only the paragraph — no subject line, no greeting, no sign-off."""
+Output only the cover letter body — no subject line, no greeting ("Dear..."), no sign-off ("Sincerely...")."""
+
     msg = client.messages.create(
-        model="claude-haiku-4-5-20251001",
-        max_tokens=320,
+        model="claude-sonnet-4-5-20251001",
+        max_tokens=700,
         messages=[{"role": "user", "content": prompt}],
     )
     return msg.content[0].text.strip()
