@@ -169,6 +169,56 @@ def _strip_html(html: str) -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def _extract_ld_json_description(html: str) -> str:
+    """Extract job description from application/ld+json script tags.
+
+    LinkedIn and CakeResume both embed structured JobPosting data in ld+json.
+    This works even when the visible page content is behind a login wall.
+    """
+    ld_matches = re.findall(
+        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+        html, re.DOTALL | re.IGNORECASE
+    )
+    for ld_raw in ld_matches:
+        try:
+            ld = json.loads(ld_raw.strip())
+            items = ld if isinstance(ld, list) else [ld]
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                if item.get("@type") == "JobPosting":
+                    desc = item.get("description", "")
+                    if desc:
+                        return _strip_html(str(desc))[:3000]
+        except Exception:
+            continue
+    return ""
+
+
+def _extract_cakeresume_jd(html: str) -> str:
+    """Extract job description from CakeResume page.
+
+    CakeResume renders job content in a <div class="job-description"> or
+    embeds it in ld+json. Try ld+json first, then specific div classes.
+    """
+    # Try ld+json first
+    ld_desc = _extract_ld_json_description(html)
+    if ld_desc:
+        return ld_desc
+
+    # Fallback: look for job description div
+    for pattern in (
+        r'<div[^>]+class="[^"]*job-description[^"]*"[^>]*>(.*?)</div\s*>',
+        r'<div[^>]+class="[^"]*description[^"]*"[^>]*>(.*?)</div\s*>',
+        r'<section[^>]+class="[^"]*job-detail[^"]*"[^>]*>(.*?)</section\s*>',
+    ):
+        m = re.search(pattern, html, re.DOTALL | re.IGNORECASE)
+        if m:
+            return _strip_html(m.group(1))[:3000]
+
+    return ""
+
+
 def fetch_jd_from_url(url: str) -> str:
     """Try to fetch a job description from its URL. Returns plain text or empty string."""
     if not url:
@@ -188,16 +238,51 @@ def fetch_jd_from_url(url: str) -> str:
         except Exception:
             pass
 
-    # LinkedIn blocks scraping and returns a login page — skip it entirely
+    _ua = {
+        "User-Agent": _HEADERS_104["User-Agent"],
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+
+    # LinkedIn: try ld+json extraction from the public SSR page.
+    # LinkedIn returns a partial page even without login — often includes ld+json with the JD.
     if "linkedin.com" in url:
+        try:
+            req = Request(url, headers=_ua)
+            with urlopen(req, timeout=15) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+            ld_desc = _extract_ld_json_description(html)
+            if ld_desc and len(ld_desc) > 100:
+                return ld_desc
+        except Exception:
+            pass
+        # If ld+json extraction didn't work, fall through to generic (or return empty)
+        # Generic text from LinkedIn login wall is useless — return empty
         return ""
 
+    # CakeResume: use targeted extraction
+    if "cakeresume.com" in url:
+        try:
+            req = Request(url, headers=_ua)
+            with urlopen(req, timeout=15) as resp:
+                html = resp.read().decode("utf-8", errors="ignore")
+            cake_desc = _extract_cakeresume_jd(html)
+            if cake_desc and len(cake_desc) > 100:
+                return cake_desc
+            # Fallback to full text strip if targeted extraction failed
+            return _strip_html(html)[:3000]
+        except Exception:
+            return ""
+
     # Generic fallback: fetch URL and extract text
-    _ua = {"User-Agent": _HEADERS_104["User-Agent"]}
     try:
         req = Request(url, headers=_ua)
         with urlopen(req, timeout=15) as resp:
             html = resp.read().decode("utf-8", errors="ignore")
+        # Try ld+json first for any site that embeds it
+        ld_desc = _extract_ld_json_description(html)
+        if ld_desc and len(ld_desc) > 100:
+            return ld_desc
         return _strip_html(html)[:3000]
     except Exception:
         return ""

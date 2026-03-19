@@ -136,6 +136,46 @@
   .btn-secondary:hover { border-color: #9ca3af; }
   .btn-row { display: flex; gap: 8px; margin-top: 10px; }
 
+  /* ── Job search settings ── */
+  .market-grid { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 20px; }
+  .market-toggle {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 16px; border-radius: 8px;
+    border: 1.5px solid #e5e7eb; background: #fff;
+    cursor: pointer; font-size: 0.88rem; color: #374151;
+    transition: border-color .12s, background .12s, color .12s;
+    user-select: none;
+  }
+  .market-toggle:hover { border-color: #9ca3af; }
+  .market-toggle.active { border-color: #4f46e5; background: #eef2ff; color: #3730a3; font-weight: 600; }
+  .market-toggle input { display: none; }
+
+  .source-grid { display: flex; flex-direction: column; gap: 8px; margin-bottom: 20px; }
+  .source-toggle {
+    display: flex; align-items: center; gap: 10px;
+    padding: 8px 12px; border-radius: 8px;
+    border: 1.5px solid #e5e7eb; background: #fff;
+    cursor: pointer; font-size: 0.85rem; color: #374151;
+    transition: border-color .12s, background .12s;
+    user-select: none;
+  }
+  .source-toggle:hover { border-color: #9ca3af; }
+  .source-toggle.active { border-color: #10b981; background: #f0fdf4; color: #065f46; }
+  .source-toggle input { display: none; }
+  .source-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: #d1d5db; flex-shrink: 0; transition: background .12s;
+  }
+  .source-toggle.active .source-dot { background: #10b981; }
+
+  .titles-input {
+    width: 100%; border: 1.5px solid #e5e7eb; border-radius: 8px;
+    padding: 10px 12px; font-size: 0.85rem; font-family: inherit;
+    outline: none; resize: vertical; min-height: 72px;
+  }
+  .titles-input:focus { border-color: #6366f1; }
+  .settings-save-status { font-size: 0.78rem; margin-top: 6px; color: #6b7280; min-height: 18px; }
+
   /* ── Coach card ── */
   .coach-link-btn {
     display: inline-flex; align-items: center; gap: 8px;
@@ -202,6 +242,31 @@
     <div class="btn-row">
       <button class="btn-primary" id="culture-add-btn">+ Add Entry</button>
     </div>
+  </div>
+
+  <!-- ── Job Search Settings ── -->
+  <div class="setup-card" id="card-search-settings">
+    <h2>🔍 Job Search Settings</h2>
+    <p class="card-desc">Choose which markets and sources to search. Changes take effect on the next refresh.</p>
+
+    <div style="font-size:0.85rem;font-weight:600;color:#374151;margin-bottom:10px">Markets</div>
+    <div class="market-grid" id="market-grid">
+      <!-- populated by JS -->
+    </div>
+
+    <div style="font-size:0.85rem;font-weight:600;color:#374151;margin-bottom:10px">Sources</div>
+    <div class="source-grid" id="source-grid">
+      <!-- populated by JS -->
+    </div>
+
+    <div style="font-size:0.85rem;font-weight:600;color:#374151;margin-bottom:6px">Job Titles to Search</div>
+    <textarea id="search-titles-input" class="titles-input"
+      placeholder="One title per line, e.g.&#10;Growth Product Manager&#10;Product Manager"></textarea>
+
+    <div class="btn-row" style="margin-top:12px">
+      <button class="btn-primary" id="search-settings-save">💾 Save Settings</button>
+    </div>
+    <div class="settings-save-status" id="settings-save-status"></div>
   </div>
 
   <!-- ── Career Coach ── -->
@@ -430,9 +495,112 @@
     await loadCultureEntries();
   });
 
+  // ── Job Search Settings ─────────────────────────────────────
+  let _cfgMarkets = [];
+  let _cfgSources = {};
+  let _cfgAllMarkets = [];
+  let _cfgMarketLabels = {};
+  let _cfgAllSources = [];
+  let _cfgSourceLabels = {};
+
+  async function loadSearchSettings() {
+    try {
+      const res = await fetch('/api/config');
+      if (!res.ok) return;
+      const data = await res.json();
+      _cfgMarkets = data.markets || [];
+      _cfgSources = data.sources || {};
+      _cfgAllMarkets = data.all_markets || ['tw', 'us', 'jp', 'sg'];
+      _cfgMarketLabels = data.market_labels || {};
+      _cfgAllSources = data.all_sources || [];
+      _cfgSourceLabels = data.source_labels || {};
+
+      // Render market toggles
+      const mg = document.getElementById('market-grid');
+      mg.innerHTML = _cfgAllMarkets.map(m => `
+        <label class="market-toggle ${_cfgMarkets.includes(m) ? 'active' : ''}" data-market="${m}">
+          <input type="checkbox" ${_cfgMarkets.includes(m) ? 'checked' : ''}>
+          ${escHtml(_cfgMarketLabels[m] || m.toUpperCase())}
+        </label>`).join('');
+
+      mg.querySelectorAll('.market-toggle').forEach(el => {
+        el.addEventListener('click', () => {
+          const m = el.dataset.market;
+          const cb = el.querySelector('input');
+          cb.checked = !cb.checked;
+          el.classList.toggle('active', cb.checked);
+        });
+      });
+
+      // Render source toggles
+      const sg = document.getElementById('source-grid');
+      sg.innerHTML = _cfgAllSources.map(s => `
+        <label class="source-toggle ${_cfgSources[s] ? 'active' : ''}" data-source="${s}">
+          <input type="checkbox" ${_cfgSources[s] ? 'checked' : ''}>
+          <span class="source-dot"></span>
+          ${escHtml(_cfgSourceLabels[s] || s)}
+        </label>`).join('');
+
+      sg.querySelectorAll('.source-toggle').forEach(el => {
+        el.addEventListener('click', () => {
+          const cb = el.querySelector('input');
+          cb.checked = !cb.checked;
+          el.classList.toggle('active', cb.checked);
+        });
+      });
+
+      // Render titles
+      const titles = data.titles || [];
+      document.getElementById('search-titles-input').value = titles.join('\n');
+
+    } catch (e) {
+      console.error('Failed to load search settings', e);
+    }
+  }
+
+  document.getElementById('search-settings-save').addEventListener('click', async () => {
+    const btn = document.getElementById('search-settings-save');
+    const status = document.getElementById('settings-save-status');
+    btn.disabled = true; btn.textContent = '⏳ Saving…';
+    status.textContent = '';
+
+    // Collect markets
+    const markets = Array.from(document.querySelectorAll('#market-grid .market-toggle input:checked'))
+      .map(cb => cb.closest('[data-market]').dataset.market);
+
+    // Collect sources
+    const sources = {};
+    document.querySelectorAll('#source-grid .source-toggle').forEach(el => {
+      const s = el.dataset.source;
+      const cb = el.querySelector('input');
+      if (s) sources[s] = cb.checked;
+    });
+
+    // Collect titles
+    const titlesRaw = document.getElementById('search-titles-input').value;
+    const titles = titlesRaw.split('\n').map(t => t.trim()).filter(Boolean);
+
+    try {
+      const res = await fetch('/api/config', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ markets, sources, titles }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+      status.style.color = '#16a34a';
+      status.textContent = '✓ Saved — takes effect on next refresh';
+    } catch (e) {
+      status.style.color = '#dc2626';
+      status.textContent = '✗ Save failed: ' + e.message;
+    }
+    btn.disabled = false;
+    btn.textContent = '💾 Save Settings';
+  });
+
   // ── Init ───────────────────────────────────────────────────
   initResume();
   loadCultureEntries();
+  loadSearchSettings();
 </script>
 </body>
 </html>

@@ -282,6 +282,138 @@ def cakeresume_auth_status() -> JSONResponse:
 
 # ── URL import endpoints ───────────────────────────────────────────────────────
 
+def _detect_market_from_url_and_company(url: str, company: str, location: str) -> str | None:
+    """Heuristic market detection before sending to LLM — avoids TW false positives.
+
+    Priority order:
+    1. Known US companies → us (unless location explicitly says otherwise)
+    2. URL domain (linkedin.com/in → check location; 104.com.tw → tw; cakeresume.com → check)
+    3. Location keywords (Bay Area, San Francisco, New York, etc. → us; 台北 → tw; Tokyo → jp)
+    """
+    url_lower = (url or "").lower()
+    company_lower = (company or "").lower()
+    loc_lower = (location or "").lower()
+
+    # Explicit TW/JP location keywords override company heuristic
+    if any(k in loc_lower for k in ("台北", "taipei", "新北", "高雄", "台灣", "taiwan")):
+        return "tw"
+    if any(k in loc_lower for k in ("tokyo", "osaka", "東京", "大阪", "japan", "日本")):
+        return "jp"
+    if any(k in loc_lower for k in ("singapore", "sg", "싱가포르")):
+        return "sg"
+
+    # US location keywords
+    if any(k in loc_lower for k in (
+        "san francisco", "bay area", "menlo park", "seattle", "new york", "nyc",
+        "los angeles", "austin", "boston", "chicago", "remote", "united states",
+        "california", "washington", "new york city", "mountain view", "sunnyvale",
+        "palo alto", "san jose",
+    )):
+        return "us"
+
+    # Well-known US tech companies → default to US unless location says otherwise
+    _US_COMPANIES = {
+        "meta", "facebook", "google", "alphabet", "amazon", "apple", "microsoft",
+        "netflix", "uber", "airbnb", "stripe", "openai", "anthropic", "linkedin",
+        "twitter", "x corp", "snap", "snapchat", "pinterest", "reddit", "discord",
+        "github", "figma", "notion", "salesforce", "oracle", "adobe", "nvidia",
+        "intel", "amd", "qualcomm", "palantir", "datadog", "snowflake", "databricks",
+        "confluent", "twilio", "okta", "workday", "zoom", "slack", "dropbox",
+        "shopify", "robinhood", "coinbase", "doordash", "instacart", "lyft",
+    }
+    # Match company name loosely (strip Inc, Corp, etc.)
+    company_clean = re.sub(r"\b(inc|corp|llc|ltd|co)\b\.?", "", company_lower).strip()
+    for us_co in _US_COMPANIES:
+        if us_co in company_clean or company_clean in us_co:
+            return "us"
+
+    # Taiwan job boards
+    if "104.com.tw" in url_lower or "1111.com.tw" in url_lower:
+        return "tw"
+    if "cakeresume.com" in url_lower:
+        return None  # CakeResume has both TW and global postings — let LLM decide
+
+    return None  # Let LLM decide
+
+
+def _extract_structured_data_from_html(html: str) -> dict:
+    """Extract job data from HTML structured sources before stripping all tags.
+
+    Looks for:
+    - <script type="application/ld+json"> (LinkedIn, Indeed, CakeResume use this)
+    - <meta property="og:title"> / <meta property="og:description">
+    - LinkedIn-specific meta tags
+    """
+    import json as _json
+    result: dict = {}
+
+    # ── application/ld+json ────────────────────────────────────────────────────
+    ld_matches = re.findall(
+        r'<script[^>]+type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
+        html, re.DOTALL | re.IGNORECASE
+    )
+    for ld_raw in ld_matches:
+        try:
+            ld = _json.loads(ld_raw.strip())
+            # Handle @graph arrays
+            items = ld if isinstance(ld, list) else [ld]
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                jtype = item.get("@type", "")
+                if jtype == "JobPosting" or "JobPosting" in str(jtype):
+                    result["title"] = item.get("title", result.get("title", ""))
+                    result["company"] = (
+                        item.get("hiringOrganization", {}).get("name", "")
+                        or result.get("company", "")
+                    )
+                    loc = item.get("jobLocation", {})
+                    if isinstance(loc, list):
+                        loc = loc[0] if loc else {}
+                    addr = loc.get("address", {}) if isinstance(loc, dict) else {}
+                    if isinstance(addr, str):
+                        result["location"] = addr
+                    elif isinstance(addr, dict):
+                        result["location"] = (
+                            addr.get("addressLocality", "")
+                            or addr.get("addressRegion", "")
+                            or addr.get("addressCountry", "")
+                        )
+                    desc = item.get("description", "")
+                    if desc:
+                        # Strip HTML from description
+                        desc = re.sub(r"<[^>]+>", " ", desc)
+                        desc = re.sub(r"\s+", " ", desc).strip()
+                        result["description"] = desc[:3000]
+        except Exception:
+            continue
+
+    # ── og: meta tags ─────────────────────────────────────────────────────────
+    if not result.get("title"):
+        m = re.search(r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
+                       html, re.IGNORECASE)
+        if not m:
+            m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
+                           html, re.IGNORECASE)
+        if m:
+            result["title"] = m.group(1).strip()
+
+    if not result.get("description"):
+        m = re.search(r'<meta[^>]+property=["\']og:description["\'][^>]+content=["\']([^"\']+)["\']',
+                       html, re.IGNORECASE)
+        if not m:
+            m = re.search(r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:description["\']',
+                           html, re.IGNORECASE)
+        if m:
+            result["description"] = m.group(1).strip()
+
+    # ── LinkedIn-specific: job-details div in SSR HTML ────────────────────────
+    if "linkedin.com" in "":  # placeholder — SSR data is in __initialData__ script
+        pass
+
+    return result
+
+
 @app.post("/api/jobs/import")
 async def jobs_import_url(body: dict) -> JSONResponse:
     """Fetch a job posting URL and parse it into structured fields using Claude."""
@@ -298,7 +430,9 @@ async def jobs_import_url(body: dict) -> JSONResponse:
         "User-Agent": (
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
             "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36"
-        )
+        ),
+        "Accept-Language": "en-US,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     }
     try:
         async with httpx.AsyncClient(follow_redirects=True, timeout=20) as client:
@@ -307,25 +441,54 @@ async def jobs_import_url(body: dict) -> JSONResponse:
     except Exception as exc:
         raise HTTPException(502, f"Could not fetch URL: {exc}")
 
-    # Strip HTML tags to plain text
+    # ── Extract structured data first (ld+json, og: meta) ─────────────────────
+    structured = _extract_structured_data_from_html(html)
+
+    # ── Strip HTML tags to plain text for LLM fallback ────────────────────────
     text = re.sub(r"<[^>]+>", " ", html)
-    text = re.sub(r"\s+", " ", text).strip()[:6000]
+    text = re.sub(r"\s+", " ", text).strip()
+
+    # For LinkedIn: the text is mostly login-wall boilerplate.
+    # Prepend any structured data we extracted so the LLM has something useful.
+    is_linkedin = "linkedin.com" in url.lower()
+    if is_linkedin and structured:
+        structured_hint = "\n".join(
+            f"{k}: {v}" for k, v in structured.items() if v
+        )
+        text = f"[STRUCTURED DATA EXTRACTED]\n{structured_hint}\n\n[RAW TEXT SNIPPET]\n{text[:2000]}"
+    else:
+        text = text[:6000]
+
+    # ── Heuristic market pre-detection from URL domain ─────────────────────────
+    url_market_hint = ""
+    if "linkedin.com" in url.lower():
+        url_market_hint = "\nNote: This is a LinkedIn URL. Location is usually a city in the posting, not Taiwan unless explicitly stated."
+    elif "104.com.tw" in url.lower():
+        url_market_hint = "\nNote: This is a 104.com.tw URL (Taiwan job board). Market is likely tw."
 
     # Claude parses the page
     ai = _anthropic.Anthropic()
     msg = ai.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=800,
+        max_tokens=900,
         messages=[{
             "role": "user",
             "content": f"""Extract job posting information from this page. Return ONLY valid JSON with these fields:
 {{
   "title": "<job title>",
   "company": "<company name>",
-  "location": "<city or remote, or null>",
-  "market": "<tw|jp|sg|us|null — country code based on location/company>",
+  "location": "<city/region shown in the posting, e.g. 'San Francisco, CA' or 'Remote' or 'Taipei, Taiwan'>",
+  "market": "<MUST be exactly one of: tw | jp | sg | us | null>",
   "description": "<full job description in original language, max 1500 chars>"
 }}
+
+MARKET DETECTION RULES (apply in order):
+1. If location contains Taiwan / 台灣 / 台北 / Taipei → "tw"
+2. If location contains Japan / 日本 / Tokyo / Osaka → "jp"
+3. If location contains Singapore → "sg"
+4. If company is Meta, Google, Amazon, Apple, Microsoft, Netflix, Uber, Airbnb, Stripe, OpenAI, Anthropic, LinkedIn, Snap, Pinterest, Reddit, Discord, Github, Figma, Notion, Salesforce, Nvidia → "us" (unless location explicitly says TW/JP/SG)
+5. If location contains San Francisco, Bay Area, Seattle, New York, Los Angeles, Chicago, Boston, Austin, California, United States, Remote (US) → "us"
+6. If genuinely unknown → null{url_market_hint}
 
 URL: {url}
 
@@ -342,6 +505,27 @@ Page text:
         parsed = _json.loads(raw.strip())
     except Exception:
         raise HTTPException(422, "Could not parse job data from page")
+
+    # ── Post-processing: override with structured data if LLM missed it ────────
+    if structured.get("title") and not parsed.get("title"):
+        parsed["title"] = structured["title"]
+    if structured.get("company") and not parsed.get("company"):
+        parsed["company"] = structured["company"]
+    if structured.get("location") and not parsed.get("location"):
+        parsed["location"] = structured["location"]
+    # For description: prefer structured (cleaner) over LLM-extracted
+    if structured.get("description") and len(structured["description"]) > len(parsed.get("description") or ""):
+        parsed["description"] = structured["description"]
+
+    # ── Final market heuristic override (prevent TW false positives) ───────────
+    heuristic_market = _detect_market_from_url_and_company(
+        url, parsed.get("company", ""), parsed.get("location", "")
+    )
+    if heuristic_market and not parsed.get("market"):
+        parsed["market"] = heuristic_market
+    elif heuristic_market == "us" and parsed.get("market") == "tw":
+        # Heuristic strongly says US (known US company + US location) — override
+        parsed["market"] = "us"
 
     parsed["url"] = url
     return JSONResponse({"job": parsed})
@@ -673,7 +857,7 @@ async def generate_package_endpoint(job_id: str, background_tasks: BackgroundTas
 
 @app.post("/api/pipeline/{job_id}/optimize-resume")
 async def optimize_resume_endpoint(job_id: str) -> JSONResponse:
-    """Deep-optimize ATS resume using earned-secret methodology, then re-check ATS score."""
+    """Deep-optimize ATS resume — dual-lens (ATS + senior recruiter), score regression guard."""
     import json as _json
     resume = get_latest_resume()
     if not resume:
@@ -682,7 +866,7 @@ async def optimize_resume_endpoint(job_id: str) -> JSONResponse:
     if not job:
         raise HTTPException(404, "Job not found")
     from store import get_application_package, upsert_application_package
-    from application_generator import generate_ats_resume_sync, check_ats_sync
+    from application_generator import optimize_resume_deep_sync, check_ats_sync, compute_resume_diff
 
     pkg = get_application_package(job_id, resume["id"])
     if not pkg:
@@ -696,6 +880,8 @@ async def optimize_resume_endpoint(job_id: str) -> JSONResponse:
             ats_gap_raw = _json.loads(ats_gap_raw)
         except Exception:
             ats_gap_raw = {}
+
+    original_score: int = ats_gap_raw.get("score", 0)
 
     jd_text = job.get("description") or ""
     if not jd_text:
@@ -711,18 +897,60 @@ async def optimize_resume_endpoint(job_id: str) -> JSONResponse:
 
     import asyncio
     loop = asyncio.get_event_loop()
-    new_resume = await loop.run_in_executor(
-        None, lambda: generate_ats_resume_sync(base_text, jd_text, ats_gap_raw,
-                                               deep_optimize=True, story_context=story_context)
-    )
-    new_gap = await loop.run_in_executor(
-        None, lambda: check_ats_sync(new_resume, jd_text)
-    )
 
+    # ── Score regression guard: try up to 2 times, keep best ────────────────────
+    # Allow minor drops (≤5 pts) when authentic earned-secret bullets are better quality.
+    # A 5-point drop from keyword cleanup is acceptable; a large drop means something broke.
+    _ACCEPTABLE_DROP = 5
+    best_resume = base_text
+    best_gap = ats_gap_raw
+    best_score = original_score
+    best_opt_result: dict = {}
+
+    for attempt in range(2):
+        opt_result = await loop.run_in_executor(
+            None, lambda: optimize_resume_deep_sync(base_text, jd_text, ats_gap_raw,
+                                                    story_context=story_context)
+        )
+        candidate_resume = opt_result["resume"]
+        candidate_gap = await loop.run_in_executor(
+            None, lambda: check_ats_sync(candidate_resume, jd_text)
+        )
+        candidate_score: int = candidate_gap.get("score", 0)
+
+        # Accept if score improved OR only dropped within acceptable margin
+        score_ok = candidate_score >= (original_score - _ACCEPTABLE_DROP)
+        if score_ok and candidate_score >= best_score - _ACCEPTABLE_DROP:
+            best_resume = candidate_resume
+            best_gap = candidate_gap
+            best_score = candidate_score
+            best_opt_result = opt_result
+            if score_ok:
+                break  # Acceptable result — stop here
+        elif attempt == 1:
+            # Both attempts regressed too much — fall back to original
+            best_opt_result = {"coach_questions": opt_result.get("coach_questions", []),
+                               "location_note": opt_result.get("location_note")}
+
+    # ── Compute bullet-level diff ─────────────────────────────────────────────────
+    diff = compute_resume_diff(base_text, best_resume)
+
+    # ── Save best version ─────────────────────────────────────────────────────────
     upsert_application_package(job_id, resume["id"],
-                               ats_resume=new_resume,
-                               ats_gap=_json.dumps(new_gap))
-    return JSONResponse({"ats_resume": new_resume, "ats_gap": new_gap})
+                               ats_resume=best_resume,
+                               ats_gap=_json.dumps(best_gap))
+
+    return JSONResponse({
+        "ats_resume": best_resume,
+        "ats_gap": best_gap,
+        "diff": diff,
+        "score_improved": best_score >= original_score,
+        "original_score": original_score,
+        "coach_questions": best_opt_result.get("coach_questions", []),
+        "coach_conflicts": best_opt_result.get("coach_conflicts", []),
+        "location_note": best_opt_result.get("location_note"),
+        "market": best_opt_result.get("market", "UNKNOWN"),
+    })
 
 
 @app.post("/api/pipeline/{job_id}/recheck-ats")
@@ -904,7 +1132,7 @@ async def download_resume_pdf(job_id: str, body: dict) -> Response:
         if getattr(doc, "page", 2) <= 1:
             break  # fits on 1 page
 
-    safe_id = _re.sub(r"[^a-z0-9]", "-", job_id.lower())[:40]
+    safe_id = re.sub(r"[^a-z0-9]", "-", job_id.lower())[:40]
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",
@@ -1174,6 +1402,98 @@ def jobs_count() -> JSONResponse:
     return JSONResponse({"count": len(get_all_jobs())})
 
 
+# ── Config read/write endpoints ────────────────────────────────────────────────
+
+_CONFIG_PATH = _ROOT / "config.yaml"
+
+_ALL_MARKETS = ["tw", "us", "jp", "sg"]
+_MARKET_LABELS = {"tw": "🇹🇼 Taiwan", "us": "🇺🇸 USA", "jp": "🇯🇵 Japan", "sg": "🇸🇬 Singapore"}
+_ALL_SOURCES = ["104", "cakeresume", "yourator", "linkedin_jobs", "linkedin_gmail",
+                "indeed_rss", "indeed_gmail", "wellfound"]
+_SOURCE_LABELS = {
+    "104": "104 (台灣)",
+    "cakeresume": "CakeResume",
+    "yourator": "Yourator",
+    "linkedin_jobs": "LinkedIn Jobs",
+    "linkedin_gmail": "LinkedIn (Email alerts)",
+    "indeed_rss": "Indeed (RSS)",
+    "indeed_gmail": "Indeed (Email alerts)",
+    "wellfound": "Wellfound (AngelList)",
+}
+
+
+@app.get("/api/config")
+def get_app_config() -> JSONResponse:
+    """Return current markets, sources, and search titles from config.yaml."""
+    import yaml as _yaml
+    try:
+        with open(_CONFIG_PATH) as f:
+            cfg = _yaml.safe_load(f)
+    except Exception as exc:
+        raise HTTPException(500, f"Could not read config: {exc}")
+    return JSONResponse({
+        "markets": cfg.get("markets", []),
+        "sources": cfg.get("sources", {}),
+        "titles": cfg.get("targets", {}).get("titles", []),
+        "exclude_keywords": cfg.get("targets", {}).get("exclude_keywords", []),
+        "all_markets": _ALL_MARKETS,
+        "market_labels": _MARKET_LABELS,
+        "all_sources": _ALL_SOURCES,
+        "source_labels": _SOURCE_LABELS,
+    })
+
+
+@app.patch("/api/config")
+async def update_app_config(body: dict) -> JSONResponse:
+    """Patch config.yaml — accepts markets (list), sources (dict), titles (list)."""
+    import yaml as _yaml
+    try:
+        with open(_CONFIG_PATH) as f:
+            cfg = _yaml.safe_load(f)
+    except Exception as exc:
+        raise HTTPException(500, f"Could not read config: {exc}")
+
+    changed = False
+
+    if "markets" in body:
+        new_markets = [m for m in body["markets"] if m in _ALL_MARKETS]
+        if new_markets != cfg.get("markets"):
+            cfg["markets"] = new_markets
+            changed = True
+
+    if "sources" in body and isinstance(body["sources"], dict):
+        if "sources" not in cfg:
+            cfg["sources"] = {}
+        for k, v in body["sources"].items():
+            if k in _ALL_SOURCES and isinstance(v, bool):
+                cfg["sources"][k] = v
+                changed = True
+
+    if "titles" in body and isinstance(body["titles"], list):
+        titles = [t.strip() for t in body["titles"] if isinstance(t, str) and t.strip()]
+        if titles:
+            cfg.setdefault("targets", {})["titles"] = titles
+            changed = True
+
+    if "exclude_keywords" in body and isinstance(body["exclude_keywords"], list):
+        kws = [k.strip() for k in body["exclude_keywords"] if isinstance(k, str) and k.strip()]
+        cfg.setdefault("targets", {})["exclude_keywords"] = kws
+        changed = True
+
+    if changed:
+        try:
+            with open(_CONFIG_PATH, "w") as f:
+                _yaml.dump(cfg, f, allow_unicode=True, default_flow_style=False, sort_keys=False)
+        except Exception as exc:
+            raise HTTPException(500, f"Could not write config: {exc}")
+
+    return JSONResponse({"ok": True, "changed": changed, "config": {
+        "markets": cfg.get("markets", []),
+        "sources": cfg.get("sources", {}),
+        "titles": cfg.get("targets", {}).get("titles", []),
+    }})
+
+
 @app.get("/api/review/count")
 def review_count() -> JSONResponse:
     from store import get_triage
@@ -1301,10 +1621,12 @@ async def review_approve(job_id: str, background_tasks: BackgroundTasks, body: d
     from store import update_pipeline_entry, save_feedback
     update_pipeline_entry(job_id, status="recommended", verdict="recommend")
 
-    # Positive feedback signal
+    # Positive feedback signal + trigger rescore so similar jobs get boosted
     resume = get_latest_resume()
     if resume:
         save_feedback(job_id, resume["id"], "up", "triage_approved")
+        from resume_matcher import rescore_with_feedback
+        background_tasks.add_task(rescore_with_feedback, resume["id"], job_id, "up", "triage_approved")
 
     return JSONResponse({"ok": True})
 

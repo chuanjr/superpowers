@@ -9,7 +9,7 @@
 
   body {
     font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #f4f6f9;
+    background: #f0ede8;
     color: #1a1a2e;
     min-height: 100vh;
   }
@@ -297,30 +297,20 @@
     font-size: 0.9rem;
   }
 
-  #pipeline-nav {
-    text-decoration: none;
-    font-size: 0.85rem;
-    font-weight: 600;
-    color: #4f8ef7;
-    white-space: nowrap;
-    padding: 6px 12px;
-    border: 1.5px solid #4f8ef7;
-    border-radius: 7px;
-    transition: background .15s;
-  }
-  #pipeline-nav:hover { background: #f0f6ff; }
   .header-nav-link {
     text-decoration: none;
     font-size: 0.85rem;
-    font-weight: 600;
+    font-weight: 500;
     color: #6b7280;
     white-space: nowrap;
     padding: 6px 12px;
     border: 1.5px solid #e5e7eb;
     border-radius: 7px;
-    transition: background .15s, border-color .15s;
+    background: #fff;
+    transition: background .15s, border-color .15s, color .15s;
   }
   .header-nav-link:hover { background: #f9fafb; border-color: #9ca3af; color: #374151; }
+  .header-nav-link.active { border-color: #4f46e5; color: #4f46e5; background: #eff6ff; font-weight: 600; }
   #pipeline-nav span {
     background: #4f8ef7;
     color: #fff;
@@ -484,7 +474,7 @@
   <button id="btn-import" title="Add a job by URL">+ Import URL</button>
   <button id="btn-refresh" title="Re-fetch all job sources">⟳ Refresh</button>
   <a href="/review" class="header-nav-link">Qualified <span id="review-count" style="background:#4f8ef7;color:#fff;border-radius:10px;font-size:0.7rem;padding:1px 6px;margin-left:4px;display:none"></span></a>
-  <a href="/pipeline" id="pipeline-nav">Pipeline <span id="pipeline-count"></span></a>
+  <a href="/pipeline" id="pipeline-nav" class="header-nav-link">Pipeline <span id="pipeline-count"></span></a>
   <a href="/setup" class="header-nav-link">⚙ Setup</a>
 </header>
 

@@ -116,11 +116,22 @@ def _explain_sync(resume_summary: str, job: dict, candidate_industries: list[str
     pass_hint = ""
     if resume_id:
         from store import get_recent_feedback
-        recent_passes = get_recent_feedback(resume_id, rating="down", limit=5)
+        recent_passes = get_recent_feedback(resume_id, rating="down", limit=10)
         if recent_passes:
             reasons = [r["reason"] for r in recent_passes if r.get("reason")]
             if reasons:
-                pass_hint = f"\n\nRECENT PASS PATTERNS: This candidate recently passed on jobs for these reasons: {'; '.join(set(reasons))}. If this job has similar characteristics, consider scoring lower."
+                reason_counts: dict[str, int] = {}
+                for r in reasons:
+                    reason_counts[r] = reason_counts.get(r, 0) + 1
+                reason_summary = "; ".join(
+                    f"{r} (×{c})" if c > 1 else r
+                    for r, c in sorted(reason_counts.items(), key=lambda x: -x[1])
+                )
+                pass_hint = (
+                    f"\n\nRECENT PASS PATTERNS (last {len(recent_passes)} passes): "
+                    f"This candidate passed on jobs for these reasons: {reason_summary}. "
+                    "If this job has similar characteristics, score it lower (under 50)."
+                )
 
     prompt = f"""Rate the fit between this candidate and the job. Return ONLY valid JSON:
 {{"score": <0-100>, "explanation": "<1-2 specific sentences in English>"}}
@@ -221,7 +232,9 @@ async def process_matching(resume_id: int, raw_text: str) -> None:
             job = job_map.get(job_id)
             if not job:
                 return
-            score, explanation = await asyncio.to_thread(_explain_sync, summary, job, candidate_industries)
+            score, explanation = await asyncio.to_thread(
+                _explain_sync, summary, job, candidate_industries, None, resume_id
+            )
             upsert_match(resume_id, job_id, similarity=sim, score=score, explanation=explanation)
 
         for sim, jid in top_30:

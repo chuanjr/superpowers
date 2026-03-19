@@ -1,0 +1,37 @@
+{
+  "date": "2026-03-17",
+  "url": "http://localhost:8000",
+  "branch": "claude/peaceful-haslett",
+  "healthScore": 90,
+  "issues": [
+    {
+      "id": "ISSUE-001",
+      "title": "Jobs page missing nav links to Review Queue and Coach",
+      "severity": "medium",
+      "category": "UX",
+      "status": "pending",
+      "page": "/jobs"
+    },
+    {
+      "id": "ISSUE-002",
+      "title": "No active navigation state indicator on any page",
+      "severity": "low",
+      "category": "Accessibility",
+      "status": "deferred",
+      "page": "all"
+    }
+  ],
+  "categoryScores": {
+    "console": 100,
+    "links": 90,
+    "visual": 90,
+    "functional": 95,
+    "ux": 77,
+    "performance": 95,
+    "content": 90,
+    "accessibility": 82
+  },
+  "pagesVisited": ["/jobs", "/review", "/pipeline", "/coach"],
+  "apiHealth": "all 200 OK",
+  "consoleErrors": 0
+}

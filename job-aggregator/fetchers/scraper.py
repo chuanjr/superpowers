@@ -617,6 +617,126 @@ async def _scrape_yourator_one(keyword: str, browser: Browser, sem: asyncio.Sema
     return await _scrape_yourator_page(url, keyword, browser, sem)
 
 
+# LinkedIn Jobs public search — no auth required for SSR-rendered cards.
+# Location → search location string
+_LINKEDIN_LOCATIONS: dict[str, str] = {
+    "us": "United States",
+    "sg": "Singapore",
+    "jp": "Japan",
+    "tw": "Taiwan",
+}
+
+# Stable public LinkedIn Jobs class names (no obfuscation — BEM selectors)
+_LINKEDIN_JOB_SELECTORS = [
+    "ul.jobs-search__results-list li",
+    "ul[class*='jobs-search__results-list'] li",
+    ".base-search-card",
+    "[class*='base-search-card']",
+    "li[class*='result-card']",
+    "li[data-entity-urn]",
+]
+
+_LINKEDIN_STEALTH_SCRIPT = """
+    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+    window.chrome = {runtime: {}};
+"""
+
+
+async def _scrape_linkedin_jobs_one(keyword: str, market: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
+    """Scrape LinkedIn Jobs public search (no login). Best-effort — returns whatever is visible."""
+    async with sem:
+        results = []
+        location = _LINKEDIN_LOCATIONS.get(market, "United States")
+        kw = quote_plus(keyword)
+        loc = quote_plus(location)
+        # f_TPR=r86400 = posted in last 24 hours; sortBy=DD = most recent
+        url = (
+            f"https://www.linkedin.com/jobs/search/"
+            f"?keywords={kw}&location={loc}&f_TPR=r604800&sortBy=DD"
+        )
+        context = await browser.new_context(
+            user_agent=_UA,
+            viewport={"width": 1280, "height": 900},
+            locale="en-US",
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+        )
+        await context.add_init_script(_LINKEDIN_STEALTH_SCRIPT)
+        page = await context.new_page()
+        try:
+            await page.goto(url, timeout=45000, wait_until="domcontentloaded")
+            # Give React time to render
+            await page.wait_for_timeout(4000)
+
+            # --- Attempt 1: DOM selectors ---
+            found_sel = await _wait_for_any(page, _LINKEDIN_JOB_SELECTORS, timeout_each=3000)
+            if found_sel:
+                items = await page.query_selector_all(found_sel)
+                for item in items[:25]:
+                    try:
+                        title_el = await item.query_selector(
+                            "h3[class*='base-search-card__title'], h3[class*='title'], h3"
+                        )
+                        company_el = await item.query_selector(
+                            "h4[class*='base-search-card__subtitle'], h4[class*='company'], "
+                            "[class*='base-search-card__subtitle']"
+                        )
+                        link_el = await item.query_selector(
+                            "a[class*='base-card__full-link'], a[href*='/jobs/view/'], a[href*='linkedin.com/jobs/']"
+                        )
+                        title = (await title_el.inner_text() if title_el else "").strip().split("\n")[0]
+                        company = (await company_el.inner_text() if company_el else "").strip().split("\n")[0]
+                        href = await link_el.get_attribute("href") if link_el else ""
+                        if not title or len(title) < 4 or title.lower() in _UI_SKIP_LOWER:
+                            continue
+                        full_url = href if href.startswith("http") else f"https://www.linkedin.com{href}"
+                        # Strip tracking params — keep only job view path
+                        full_url = full_url.split("?")[0]
+                        results.append({
+                            "title": title,
+                            "company": company,
+                            "url": full_url,
+                            "description": "",
+                            "location": location,
+                            "source": "linkedin_jobs",
+                            "market": market,
+                        })
+                    except Exception:
+                        continue
+
+            # --- Attempt 2: link-pattern extraction if selectors failed ---
+            if not results:
+                link_items = await _extract_by_link_pattern(
+                    page, "/jobs/view/", "https://www.linkedin.com", min_path_depth=3
+                )
+                for r in link_items[:20]:
+                    if r.get("title") and len(r["title"]) >= 4:
+                        results.append({
+                            "title": r["title"],
+                            "company": r.get("company", ""),
+                            "url": r["url"].split("?")[0],
+                            "description": "",
+                            "location": location,
+                            "source": "linkedin_jobs",
+                            "market": market,
+                        })
+
+            if not results:
+                print(f"[DEBUG] LinkedIn Jobs '{keyword}' ({market}): 0 jobs — may require login or rate-limited")
+                await _dump_html(page, f"linkedin_{market}_{keyword[:20]}")
+            else:
+                print(f"[DEBUG] LinkedIn Jobs '{keyword}' ({market}): {len(results)} jobs")
+
+        except Exception as e:
+            print(f"[WARN] LinkedIn Jobs '{keyword}' ({market}): {e}")
+        finally:
+            await context.close()
+        return results
+
+
 async def _scrape_all(sources: dict, titles: list[str], markets: list[str]) -> list[dict]:
     """Run all scrapes concurrently with shared browser instances."""
     async with async_playwright() as p:
@@ -631,10 +751,16 @@ async def _scrape_all(sources: dict, titles: list[str], markets: list[str]) -> l
                 )
             if sources.get("104"):
                 browsers["104"] = await p.chromium.launch(headless=True)
+            if sources.get("linkedin_jobs"):
+                browsers["linkedin"] = await p.chromium.launch(
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
 
             cake_sem = asyncio.Semaphore(_CONCURRENCY)
             yourator_sem = asyncio.Semaphore(_CONCURRENCY)
             sem_104 = asyncio.Semaphore(_CONCURRENCY)
+            linkedin_sem = asyncio.Semaphore(2)  # Be gentle with LinkedIn
             tasks = []
 
             yourator_url = sources.get("yourator_url") if isinstance(sources, dict) else None
@@ -649,11 +775,19 @@ async def _scrape_all(sources: dict, titles: list[str], markets: list[str]) -> l
                     tasks.append(_scrape_yourator_one(title, browsers["yourator"], yourator_sem))
                 if "104" in browsers:
                     tasks.append(_scrape_104_one(title, browsers["104"], sem_104))
+                if "linkedin" in browsers:
+                    # Scrape LinkedIn for each market that has a known location mapping
+                    li_markets = [m for m in markets if m in _LINKEDIN_LOCATIONS]
+                    for market in li_markets:
+                        tasks.append(_scrape_linkedin_jobs_one(title, market, browsers["linkedin"], linkedin_sem))
 
             batches = await asyncio.gather(*tasks, return_exceptions=True)
         finally:
             for b in browsers.values():
-                await b.close()
+                try:
+                    await b.close()
+                except Exception:
+                    pass
 
     flat = []
     source_counts: dict[str, int] = {}
