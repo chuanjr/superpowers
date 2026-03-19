@@ -996,7 +996,7 @@ async def optimize_resume_endpoint(job_id: str, request: Request) -> JSONRespons
         candidate_score: int = candidate_gap.get("score", 0)
 
         # Accept if score improved OR only dropped within acceptable margin
-        score_ok = candidate_score >= (original_score - _ACCEPTABLE_DROP)
+        score_ok = (candidate_score or 0) >= (original_score - _ACCEPTABLE_DROP)
         if score_ok and candidate_score >= best_score - _ACCEPTABLE_DROP:
             best_resume = candidate_resume
             best_gap = candidate_gap
