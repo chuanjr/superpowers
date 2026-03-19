@@ -277,15 +277,21 @@ Resume:
 # ── ATS-optimized resume ───────────────────────────────────────────────────────
 
 def generate_ats_resume_sync(resume_raw: str, jd_text: str, ats_gap: dict,
-                              deep_optimize: bool = False) -> str:
+                              deep_optimize: bool = False,
+                              story_context: str = "") -> str:
     """Rewrite resume bullets using the interview-coach-skill methodology + ATS keyword embedding.
 
     When deep_optimize=True, applies the full Resume Optimization Skill methodology
     with earned-secret framing and mechanism-first storytelling.
+    story_context: optional newline-separated STAR story summaries from the story bank.
     """
     missing = ats_gap.get("missing", [])
     client = _get_claude()
     missing_str = ", ".join(missing) if missing else "(none — focus on quality uplift only)"
+
+    story_block = ""
+    if story_context:
+        story_block = f"\nSTORY BANK (additional verified achievements you may draw from):\n{story_context}\n"
 
     earned_secret_block = ""
     if deep_optimize:
@@ -295,16 +301,11 @@ Apply these insight-driven coaching principles on top of the 5 dimensions:
 a) Mechanism-first storytelling: every bullet must prove BOTH the metric AND the
    mechanism that caused it (e.g. "grew DAU 6x by diagnosing creative fatigue and
    repurposing organic content to cut paid budget 66%" — not just "grew DAU 6x").
-b) Behavioral mechanic > spend: if the resume references growth levers, show that
-   the right mechanic (onboarding nudge, contribution prompt, retention fix) outperformed
-   pure budget/headcount spend.
-c) Personal switching costs: when describing engagement or retention work, frame
-   achievements around personal milestone visibility or identity-at-stake moments
-   rather than generic social/team challenges.
-d) Day-N retention and funnel conversion are high-signal metrics — lead with them
-   when present, even if the original bullet led with a lagging indicator.
-e) Embed ATS keywords at the mechanism or outcome level — never tack them on as
-   adjectives or standalone terms.
+b) Behavioral mechanic > spend: show that the right mechanic outperformed spend.
+c) Personal switching costs: frame retention/engagement around personal milestone
+   visibility rather than generic social challenges.
+d) Day-N retention and funnel conversion are high-signal metrics — lead with them.
+e) Embed ATS keywords at the mechanism or outcome level — never tack them on.
 """
 
     prompt = f"""You are an expert resume coach using the interview-coach-skill methodology.
@@ -318,12 +319,16 @@ COACHING DIMENSIONS — maximise all 5 for each bullet:
 5. Differentiation: only THIS candidate could say this (earned insight or unique context)
 {earned_secret_block}
 ATS KEYWORDS TO EMBED (incorporate naturally): {missing_str}
-
-Rules:
-- Only rewrite experience/achievement bullet points
-- Keep all other content (name, contact, education, skills list, dates) exactly as-is
-- Never fabricate credentials or metrics not implied by the original resume
-- Output ONLY the complete revised resume — no preamble, no commentary
+{story_block}
+STRICT INTEGRITY RULES — these override everything else:
+- NEVER invent, fabricate, or embellish any experience, metric, number, role, company,
+  or achievement that is not explicitly present in the resume OR the story bank above.
+- If a bullet cannot be honestly strengthened from existing evidence, keep it as-is.
+- If an ATS keyword cannot be naturally embedded without fabrication, DO NOT include it;
+  list it at the end under "## ATS GAPS (could not embed without fabrication):" instead.
+- Only rewrite experience/achievement bullet points; keep name, contact, education,
+  skills list, and dates exactly as-is.
+- Output ONLY the complete revised resume — no preamble, no commentary.
 
 FORMAT the output as structured markdown so it can be rendered as a PDF:
 - First line: candidate full name only

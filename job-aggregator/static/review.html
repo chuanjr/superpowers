@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Review Queue</title>
+<title>Qualified — Job Search</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
   :focus-visible { outline: 2px solid #4f46e5; outline-offset: 2px; border-radius: 3px; }
@@ -403,11 +403,11 @@
 
 <div class="page-header">
   <div>
-    <h1>🔍 Analysis</h1>
-    <div class="subtitle" id="queue-subtitle">Scout → <strong>Analysis</strong> → Approved → Application → Interview</div>
+    <h1>🔍 Qualified</h1>
+    <div class="subtitle" id="queue-subtitle">Total Jobs → <strong>Qualified</strong> → Preferred → Application → Interview</div>
   </div>
   <div class="header-nav">
-    <a href="/jobs" class="nav-link">Scout</a>
+    <a href="/jobs" class="nav-link">Jobs</a>
     <a href="/pipeline" class="nav-link">Pipeline</a>
     <a href="/setup" class="nav-link">⚙ Setup</a>
     <button class="btn-refresh" id="btn-refresh">
@@ -581,8 +581,8 @@
     document.getElementById('queue-count').textContent = `${ALL_ENTRIES.length} job${ALL_ENTRIES.length !== 1 ? 's' : ''} pending`;
     document.getElementById('queue-subtitle').innerHTML =
       ALL_ENTRIES.length
-        ? `Scout → <strong>Analysis</strong> → Approved → Application → Interview &nbsp;·&nbsp; ${ALL_ENTRIES.length} job${ALL_ENTRIES.length !== 1 ? 's' : ''} pending`
-        : 'Scout → <strong>Analysis</strong> → Approved → Application → Interview';
+        ? `Total Jobs → <strong>Qualified</strong> → Preferred → Application → Interview &nbsp;·&nbsp; ${ALL_ENTRIES.length} job${ALL_ENTRIES.length !== 1 ? 's' : ''} pending`
+        : 'Total Jobs → <strong>Qualified</strong> → Preferred → Application → Interview';
 
     if (!entries.length && FILTER === 'all') {
       main.innerHTML = `<div class="empty-state">

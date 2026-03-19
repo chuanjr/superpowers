@@ -471,13 +471,13 @@
 <body>
 
 <div style="position:absolute;top:16px;left:48px;display:flex;align-items:center;gap:16px">
-  <a href="/review" class="back-link">← Analysis</a>
+  <a href="/review" class="back-link">← Qualified</a>
 </div>
 
 <div class="page-header">
   <div>
     <h1 id="header-name">Pipeline</h1>
-    <div class="subtitle" id="header-subtitle">Scout → Analysis → Approved → Application → Interview</div>
+    <div class="subtitle" id="header-subtitle">Total Jobs → Qualified → Preferred → Application → Interview</div>
   </div>
   <div style="display:flex;align-items:center;gap:16px">
     <div class="updated" id="header-updated"></div>
@@ -489,18 +489,18 @@
 
 <div class="stats-row" style="align-items:center">
   <div class="stat-card" style="flex:1">
-    <div class="label">Scout</div>
+    <div class="label">Total Jobs</div>
     <a href="/jobs" class="value" id="stat-scout" style="text-decoration:none;color:inherit">—</a>
   </div>
   <div style="font-size:1.2rem;color:#d1d5db;flex:0 0 auto">→</div>
   <div class="stat-card" style="flex:1">
-    <div class="label">Analysis</div>
+    <div class="label">Qualified</div>
     <a href="/review" class="value" id="stat-analysis" style="text-decoration:none;color:inherit">—</a>
   </div>
   <div style="font-size:1.2rem;color:#d1d5db;flex:0 0 auto">→</div>
   <div class="stat-card" style="flex:1">
-    <div class="label">Approved</div>
-    <div class="value" id="stat-approved">—</div>
+    <div class="label">Preferred</div>
+    <a href="/pipeline?filter=recommended" class="value" id="stat-approved" style="text-decoration:none;color:inherit">—</a>
   </div>
   <div style="font-size:1.2rem;color:#d1d5db;flex:0 0 auto">→</div>
   <div class="stat-card" style="flex:1">
@@ -791,7 +791,7 @@
   <td><span class="badge-verdict ${verdictCls}">${verdictLabel}</span></td>
   <td>
     <select class="status-sel" data-job-id="${escHtml(e.job_id)}">
-      <option value="recommended"  ${e.status === 'recommended'  ? 'selected' : ''}>Approved</option>
+      <option value="recommended"  ${e.status === 'recommended'  ? 'selected' : ''}>Preferred</option>
       <option value="applied"      ${e.status === 'applied'      ? 'selected' : ''}>Applied</option>
       <option value="interviewing" ${e.status === 'interviewing' ? 'selected' : ''}>Interviewing</option>
       <option value="offer"        ${e.status === 'offer'        ? 'selected' : ''}>🎉 Offer</option>

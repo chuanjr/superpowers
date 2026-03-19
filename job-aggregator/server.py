@@ -701,10 +701,19 @@ async def optimize_resume_endpoint(job_id: str) -> JSONResponse:
     if not jd_text:
         jd_text = await _ensure_job_description(job_id, job)
 
+    # Pass story bank so the optimizer can reference real achievements
+    from store import get_stories
+    stories = get_stories()
+    story_context = "\n".join(
+        f"- {s.get('situation','')}: {s.get('action','')}: {s.get('result','')}"
+        for s in (stories or []) if s.get("action")
+    )[:2000]
+
     import asyncio
     loop = asyncio.get_event_loop()
     new_resume = await loop.run_in_executor(
-        None, lambda: generate_ats_resume_sync(base_text, jd_text, ats_gap_raw, deep_optimize=True)
+        None, lambda: generate_ats_resume_sync(base_text, jd_text, ats_gap_raw,
+                                               deep_optimize=True, story_context=story_context)
     )
     new_gap = await loop.run_in_executor(
         None, lambda: check_ats_sync(new_resume, jd_text)
@@ -876,25 +885,23 @@ async def download_resume_pdf(job_id: str, body: dict) -> Response:
         flush_section()
         return story
 
-    # Try at body=10pt first; if > 1 page, shrink to 8.5pt
-    for body_pt, bullet_pt in [(10.0, 9.5), (8.5, 8.0)]:
+    # Try progressively smaller font sizes until fits on 1 page
+    pdf_bytes = b""
+    for body_pt, bullet_pt in [(10.0, 9.5), (8.5, 8.0), (7.5, 7.0)]:
         buf = io.BytesIO()
-        margin = 0.5 * cm * (72 / 2.54)  # 0.5" in points
         doc = SimpleDocTemplate(
             buf, pagesize=letter,
             leftMargin=36, rightMargin=36,
-            topMargin=36, bottomMargin=36,
+            topMargin=28, bottomMargin=28,
         )
         story_elements = _build_story(body_pt, bullet_pt)
         try:
             doc.build(story_elements)
         except Exception as exc:
             raise HTTPException(500, f"PDF generation error: {exc}")
-        # Check page count via simple heuristic: if the pdf has page markers, stay
         pdf_bytes = buf.getvalue()
-        # Count /Page objects to determine page count
-        page_count = pdf_bytes.count(b"/Type /Page\n") + pdf_bytes.count(b"/Type/Page\n")
-        if page_count <= 1:
+        # doc.page holds the last page number after build
+        if getattr(doc, "page", 2) <= 1:
             break  # fits on 1 page
 
     safe_id = _re.sub(r"[^a-z0-9]", "-", job_id.lower())[:40]
