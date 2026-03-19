@@ -17,7 +17,7 @@ from fastapi import Response
 from dotenv import load_dotenv
 load_dotenv(override=True)
 
-from fastapi import BackgroundTasks, FastAPI, File, HTTPException, UploadFile
+from fastapi import BackgroundTasks, Body, FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 import uvicorn
@@ -184,7 +184,7 @@ def pipeline_remove(job_id: str) -> JSONResponse:
 
 # ── Refresh jobs endpoint ──────────────────────────────────────────────────────
 
-_refresh_state: dict = {"running": False, "new_count": None, "error": None, "cakeresume_auth_needed": False}
+_refresh_state: dict = {"running": False, "new_count": None, "error": None, "cakeresume_auth_needed": False, "gmail_auth_needed": False}
 _cake_auth_state: dict = {"running": False, "done": False, "error": None}
 
 
@@ -197,6 +197,7 @@ def jobs_refresh() -> JSONResponse:
         _refresh_state["running"] = True
         _refresh_state["error"] = None
         _refresh_state["new_count"] = None
+        _refresh_state["gmail_auth_needed"] = False
         from store import get_existing_ids as _get_ids
         before_ids = _get_ids()
         try:
@@ -211,6 +212,8 @@ def jobs_refresh() -> JSONResponse:
             output = result.stdout or ""
             if "[WARN] CakeResume" in output and "login may have expired" in output:
                 _refresh_state["cakeresume_auth_needed"] = True
+            if "[WARN] Gmail auth failed" in output:
+                _refresh_state["gmail_auth_needed"] = True
             after_ids = _get_ids()
             new_ids = after_ids - before_ids
             _refresh_state["new_count"] = len(new_ids)
@@ -241,6 +244,7 @@ def jobs_refresh_status() -> JSONResponse:
         "new_count": _refresh_state["new_count"],
         "error": _refresh_state["error"],
         "cakeresume_auth_needed": _refresh_state.get("cakeresume_auth_needed", False),
+        "gmail_auth_needed": _refresh_state.get("gmail_auth_needed", False),
     })
 
 
@@ -718,17 +722,23 @@ async def pipeline_culture_check(job_id: str, background_tasks: BackgroundTasks)
         company_culture = None
         try:
             from company_research import get_or_research_company
-            company_culture = await asyncio.to_thread(
-                get_or_research_company, job.get("company") or "", job.get("url") or ""
+            company_culture = await asyncio.wait_for(
+                asyncio.to_thread(
+                    get_or_research_company, job.get("company") or "", job.get("url") or ""
+                ),
+                timeout=60,
             )
         except Exception:
-            pass
+            pass  # company research is optional — proceed without it
 
         try:
-            signals = await asyncio.to_thread(
-                score_culture_sync, merged_dna,
-                job.get("title") or "", job.get("company") or "",
-                jd_text, company_culture,
+            signals = await asyncio.wait_for(
+                asyncio.to_thread(
+                    score_culture_sync, merged_dna,
+                    job.get("title") or "", job.get("company") or "",
+                    jd_text, company_culture,
+                ),
+                timeout=60,
             )
             upsert_application_package(
                 job_id, resume["id"],
@@ -788,11 +798,14 @@ def get_package(job_id: str) -> JSONResponse:
             return JSONResponse({"status": "error", "error": task_state["error"]})
         return JSONResponse({"status": "none"})
 
-    # Package exists but may be stuck in processing if task errored out
+    # Package exists but may be stuck in processing if task errored out or server restarted
     if pkg.get("status") in ("processing", "pending"):
         task_state = _pkg_tasks.get(job_id, {})
         if task_state.get("error"):
             return JSONResponse({"status": "error", "error": task_state["error"]})
+        # No active task in memory (e.g. server restarted mid-generation) → allow retry
+        if not task_state.get("running"):
+            return JSONResponse({"status": "none"})
 
     def _parse(key):
         val = pkg.get(key)
@@ -810,10 +823,11 @@ def get_package(job_id: str) -> JSONResponse:
         "culture_signals": _parse("culture_signals"),
         "story_matches":   _parse("story_matches"),
         "ats_gap":         _parse("ats_gap"),
-        "ats_resume":      pkg.get("ats_resume"),
-        "why_company":     pkg.get("why_company"),
-        "value_prop":      pkg.get("value_prop"),
-        "created_at":      pkg.get("created_at"),
+        "ats_resume":               pkg.get("ats_resume"),
+        "why_company":              pkg.get("why_company"),
+        "value_prop":               pkg.get("value_prop"),
+        "created_at":               pkg.get("created_at"),
+        "custom_resume_filename":   pkg.get("custom_resume_filename"),
     })
 
 
@@ -856,9 +870,14 @@ async def generate_package_endpoint(job_id: str, background_tasks: BackgroundTas
 
 
 @app.post("/api/pipeline/{job_id}/optimize-resume")
-async def optimize_resume_endpoint(job_id: str) -> JSONResponse:
+async def optimize_resume_endpoint(job_id: str, request: Request) -> JSONResponse:
     """Deep-optimize ATS resume — dual-lens (ATS + senior recruiter), score regression guard."""
     import json as _json
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    coach_answers: list[dict] = body.get("coach_answers", [])  # [{question, answer}, ...]
     resume = get_latest_resume()
     if not resume:
         raise HTTPException(404, "No resume found")
@@ -872,8 +891,8 @@ async def optimize_resume_endpoint(job_id: str) -> JSONResponse:
     if not pkg:
         raise HTTPException(400, "Generate the full package first")
 
-    # Use existing ats_resume as base if present, else raw resume
-    base_text = pkg.get("ats_resume") or resume.get("raw_text", "")
+    # Use per-job custom resume if uploaded, else existing ats_resume, else global resume
+    base_text = pkg.get("custom_resume_text") or pkg.get("ats_resume") or resume.get("raw_text", "")
     ats_gap_raw = pkg.get("ats_gap") or {}
     if isinstance(ats_gap_raw, str):
         try:
@@ -894,6 +913,15 @@ async def optimize_resume_endpoint(job_id: str) -> JSONResponse:
         f"- {s.get('situation','')}: {s.get('action','')}: {s.get('result','')}"
         for s in (stories or []) if s.get("action")
     )[:2000]
+
+    # Append coach Q&A answers as clarifying story context
+    if coach_answers:
+        qa_block = "\n\n═══ COACH Q&A — use these answers to write more specific bullets ═══\n"
+        qa_block += "\n".join(
+            f"Q: {qa.get('question','')}\nA: {qa.get('answer','')}"
+            for qa in coach_answers if qa.get("answer")
+        )
+        story_context = (story_context + qa_block)[:4000]
 
     import asyncio
     loop = asyncio.get_event_loop()
@@ -953,6 +981,33 @@ async def optimize_resume_endpoint(job_id: str) -> JSONResponse:
     })
 
 
+@app.post("/api/pipeline/{job_id}/upload-resume")
+async def upload_custom_resume(job_id: str, file: UploadFile = File(...)) -> JSONResponse:
+    """Upload a position-specific resume PDF for this job's ATS check."""
+    if not file.filename or not file.filename.lower().endswith(".pdf"):
+        raise HTTPException(400, "Only PDF files are supported")
+    from resume_matcher import extract_pdf_text
+    from store import get_application_package, upsert_application_package
+    resume = get_latest_resume()
+    if not resume:
+        raise HTTPException(404, "No global resume found — upload a resume first")
+    data = await file.read()
+    raw_text = extract_pdf_text(data)
+    if not raw_text or len(raw_text.strip()) < 50:
+        raise HTTPException(422, "Could not extract text from PDF")
+    pkg = get_application_package(job_id, resume["id"])
+    if not pkg:
+        raise HTTPException(400, "Generate the application package first")
+    upsert_application_package(
+        job_id, resume["id"],
+        custom_resume_text=raw_text,
+        custom_resume_filename=file.filename,
+        # Seed ats_resume with the custom text so the textarea shows it immediately
+        ats_resume=raw_text,
+    )
+    return JSONResponse({"ok": True, "filename": file.filename, "length": len(raw_text)})
+
+
 @app.post("/api/pipeline/{job_id}/recheck-ats")
 async def recheck_ats_endpoint(job_id: str, body: dict) -> JSONResponse:
     """Re-run ATS keyword check on edited resume text and save the new score."""
@@ -984,7 +1039,7 @@ async def recheck_ats_endpoint(job_id: str, body: dict) -> JSONResponse:
 
 
 @app.post("/api/pipeline/{job_id}/regen-cover-letter")
-async def regen_cover_letter_endpoint(job_id: str) -> JSONResponse:
+async def regen_cover_letter_endpoint(job_id: str, body: dict = Body(default={})) -> JSONResponse:
     """Regenerate value proposition from latest ATS resume content."""
     import json as _json
     resume = get_latest_resume()
@@ -1018,6 +1073,8 @@ async def regen_cover_letter_endpoint(job_id: str) -> JSONResponse:
     parsed = _json.loads(resume.get("parsed_json") or "{}")
     resume_summary = parsed.get("summary") or ""
 
+    user_why = (body.get("why_input") or "").strip()
+
     import asyncio
     loop = asyncio.get_event_loop()
     new_value_prop = await loop.run_in_executor(
@@ -1025,6 +1082,7 @@ async def regen_cover_letter_endpoint(job_id: str) -> JSONResponse:
         lambda: write_value_prop_sync(
             resume_summary, story_matches,
             job.get("title", ""), job.get("company", ""), jd_text,
+            user_why=user_why,
         )
     )
     upsert_application_package(job_id, resume["id"], value_prop=new_value_prop)
@@ -1048,19 +1106,63 @@ async def download_resume_pdf(job_id: str, body: dict) -> Response:
     if not content:
         raise HTTPException(400, "content is required")
 
+    # Known resume section keywords — treated as section headers in PDF
+    _SECTION_KEYWORDS = {
+        "summary", "professional summary", "profile", "objective",
+        "experience", "work experience", "professional experience", "employment",
+        "education", "academic background",
+        "skills", "technical skills", "core competencies", "key skills",
+        "projects", "certifications", "awards", "languages",
+        "publications", "volunteer", "activities",
+    }
+
+    def _is_pdf_section(line: str) -> bool:
+        """True if this line should be rendered as a section header in the PDF."""
+        s = line.strip()
+        if s.startswith("## ") or s.startswith("# "):
+            return True
+        lower = s.lower()
+        if lower in _SECTION_KEYWORDS:
+            return True
+        # All-caps short line (e.g. "WORK EXPERIENCE", "SKILLS")
+        if 2 <= len(s) <= 50 and re.match(r'^[A-Z][A-Z\s&/\-]+$', s):
+            return True
+        return False
+
+    def _md_to_rl(text: str) -> str:
+        """Convert basic markdown inline syntax to ReportLab XML markup.
+        Must be called AFTER html.escape to avoid double-escaping.
+        """
+        # **bold** → <b>bold</b>
+        text = re.sub(r'\*\*(.+?)\*\*', r'<b>\1</b>', text)
+        # *italic* → <i>italic</i>  (only remaining single stars)
+        text = re.sub(r'\*([^\*]+?)\*', r'<i>\1</i>', text)
+        return text
+
     def _build_story(body_pt: float, bullet_pt: float):
         """Build the reportlab story at the given font sizes."""
         styles = getSampleStyleSheet()
         name_style = ParagraphStyle(
             "Name", parent=styles["Normal"],
-            fontName="Helvetica-Bold", fontSize=16,
-            spaceAfter=2, leading=20,
+            fontName="Helvetica-Bold", fontSize=15,
+            spaceAfter=1, leading=18,
+        )
+        contact_style = ParagraphStyle(
+            "Contact", parent=styles["Normal"],
+            fontName="Helvetica", fontSize=body_pt - 0.5,
+            spaceAfter=1, leading=(body_pt - 0.5) * 1.2,
+            textColor=colors.HexColor("#555555"),
         )
         section_style = ParagraphStyle(
             "Section", parent=styles["Normal"],
             fontName="Helvetica-Bold", fontSize=body_pt,
-            spaceBefore=8, spaceAfter=2,
+            spaceBefore=6, spaceAfter=2,
             textColor=colors.HexColor("#1a1a1a"),
+        )
+        role_style = ParagraphStyle(
+            "Role", parent=styles["Normal"],
+            fontName="Helvetica-Bold", fontSize=body_pt,
+            spaceAfter=0, leading=body_pt * 1.2,
         )
         body_s = ParagraphStyle(
             "Body", parent=styles["Normal"],
@@ -1077,6 +1179,7 @@ async def download_resume_pdf(job_id: str, body: dict) -> Response:
         story: list = []
         lines = content.split("\n")
         first_line = True
+        in_header = True   # pre-EXPERIENCE contact zone
         section_block: list = []
 
         def flush_section():
@@ -1091,24 +1194,49 @@ async def download_resume_pdf(job_id: str, body: dict) -> Response:
                     section_block.append(Spacer(1, 2))
                 continue
 
+            # ── First non-blank line = candidate name ──────────────────────────
             if first_line:
-                story.append(Paragraph(_html_mod.escape(stripped), name_style))
+                # Strip any markdown bold from the name
+                name_text = re.sub(r'\*\*(.+?)\*\*', r'\1', stripped)
+                story.append(Paragraph(_html_mod.escape(name_text), name_style))
                 story.append(HRFlowable(width="100%", thickness=0.5,
-                                        color=colors.HexColor("#cccccc"), spaceAfter=4))
+                                        color=colors.HexColor("#cccccc"), spaceAfter=3))
                 first_line = False
                 continue
 
-            if stripped.startswith("## ") or stripped.startswith("# "):
+            # ── Section header ─────────────────────────────────────────────────
+            if _is_pdf_section(stripped):
                 flush_section()
-                title = stripped.lstrip("#").strip()
-                section_block.append(Paragraph(_html_mod.escape(title).upper(), section_style))
+                in_header = False
+                raw_title = stripped.lstrip("#").strip()
+                # Strip markdown bold from section title
+                raw_title = re.sub(r'\*\*(.+?)\*\*', r'\1', raw_title)
+                section_block.append(Paragraph(_html_mod.escape(raw_title).upper(), section_style))
                 section_block.append(HRFlowable(width="100%", thickness=0.3,
                                                  color=colors.HexColor("#e0e0e0"), spaceAfter=2))
-            elif stripped.startswith("- ") or stripped.startswith("• "):
+                continue
+
+            # ── Bullet line ────────────────────────────────────────────────────
+            if stripped.startswith("- ") or stripped.startswith("• "):
                 bullet_text = stripped[2:].strip()
-                section_block.append(Paragraph(f"• {_html_mod.escape(bullet_text)}", bullet_s))
+                rl_text = _md_to_rl(_html_mod.escape(bullet_text))
+                section_block.append(Paragraph(f"• {rl_text}", bullet_s))
+                continue
+
+            # ── Contact / header zone (before first section) ──────────────────
+            if in_header:
+                rl_text = _md_to_rl(_html_mod.escape(stripped))
+                story.append(Paragraph(rl_text, contact_style))
+                continue
+
+            # ── Role / company line (bold-markdown or bare text in body) ──────
+            if stripped.startswith("**") and stripped.endswith("**"):
+                # **Role Title** — treat as a role header
+                role_text = stripped.strip("*")
+                section_block.append(Paragraph(_html_mod.escape(role_text), role_style))
             else:
-                section_block.append(Paragraph(_html_mod.escape(stripped), body_s))
+                rl_text = _md_to_rl(_html_mod.escape(stripped))
+                section_block.append(Paragraph(rl_text, body_s))
 
         flush_section()
         return story
@@ -1398,8 +1526,13 @@ def _build_culture_dna_from_rows(culture_rows: list) -> dict | None:
 
 
 @app.get("/api/jobs/count")
-def jobs_count() -> JSONResponse:
-    return JSONResponse({"count": len(get_all_jobs())})
+def jobs_count(since: str = "") -> JSONResponse:
+    from datetime import datetime, timedelta, timezone
+    jobs = get_all_jobs()
+    if since == "7d":
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        jobs = [j for j in jobs if (j.get("first_seen_at") or "") >= cutoff]
+    return JSONResponse({"count": len(jobs)})
 
 
 # ── Config read/write endpoints ────────────────────────────────────────────────
@@ -1495,9 +1628,14 @@ async def update_app_config(body: dict) -> JSONResponse:
 
 
 @app.get("/api/review/count")
-def review_count() -> JSONResponse:
+def review_count(since: str = "") -> JSONResponse:
     from store import get_triage
-    return JSONResponse({"count": len(get_triage())})
+    from datetime import datetime, timedelta, timezone
+    entries = get_triage()
+    if since == "7d":
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+        entries = [e for e in entries if (e.get("added_at") or "") >= cutoff]
+    return JSONResponse({"count": len(entries)})
 
 
 @app.get("/api/review")
@@ -1617,16 +1755,41 @@ def get_review_summary(job_id: str) -> JSONResponse:
 
 @app.post("/api/review/{job_id}/approve")
 async def review_approve(job_id: str, background_tasks: BackgroundTasks, body: dict = {}) -> JSONResponse:
-    """Move a triage job into the pipeline (status → recommended)."""
+    """Move a triage job into the pipeline (status → recommended) and auto-generate package."""
     from store import update_pipeline_entry, save_feedback
     update_pipeline_entry(job_id, status="recommended", verdict="recommend")
 
-    # Positive feedback signal + trigger rescore so similar jobs get boosted
     resume = get_latest_resume()
     if resume:
+        # Positive feedback signal + rescore
         save_feedback(job_id, resume["id"], "up", "triage_approved")
         from resume_matcher import rescore_with_feedback
         background_tasks.add_task(rescore_with_feedback, resume["id"], job_id, "up", "triage_approved")
+
+        # Auto-generate application package in background (skip if already generating)
+        job = get_job(job_id)
+        if job and not _pkg_tasks.get(job_id, {}).get("running"):
+            _pkg_tasks[job_id] = {"running": True, "error": None}
+
+            async def _auto_gen():
+                import asyncio
+                from application_generator import generate_package
+                try:
+                    refreshed_jd = await _ensure_job_description(job_id, job)
+                    refreshed_job = {**job, "description": refreshed_jd} if refreshed_jd else job
+                    await asyncio.wait_for(
+                        generate_package(job_id, resume["id"], refreshed_job, resume),
+                        timeout=120.0,
+                    )
+                except asyncio.TimeoutError:
+                    _pkg_tasks[job_id]["error"] = "Auto-generation timed out."
+                except Exception as exc:
+                    import traceback; traceback.print_exc()
+                    _pkg_tasks[job_id]["error"] = str(exc)
+                finally:
+                    _pkg_tasks[job_id]["running"] = False
+
+            background_tasks.add_task(_auto_gen)
 
     return JSONResponse({"ok": True})
 

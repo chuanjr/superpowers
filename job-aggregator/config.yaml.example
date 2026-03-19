@@ -1,3 +1,6 @@
+candidate:
+  name: "Your Name"          # used in AI-generated cover letters and resume coaching
+
 markets:
   - tw
   - jp

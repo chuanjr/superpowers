@@ -186,16 +186,21 @@ def main():
 
     # 2. Fetch all sources concurrently
     print("[1/4] Fetching all sources in parallel (Gmail / RSS / Scraper)...")
-    gmail = GmailFetcher()
+    gmail = None
+    try:
+        gmail = GmailFetcher()
+    except Exception as _gmail_auth_err:
+        print(f"[WARN] Gmail auth failed ({_gmail_auth_err}) — skipping Gmail sources. Re-run setup_cli.py to re-authenticate.")
+
     rss = RSSFetcher()
     scraper = WebScraper()
 
     with ThreadPoolExecutor(max_workers=3) as pool:
-        gmail_fut = pool.submit(_fetch_gmail, gmail, sources, markets, days_back)
+        gmail_fut = pool.submit(_fetch_gmail, gmail, sources, markets, days_back) if gmail else None
         rss_fut = pool.submit(rss.fetch_all, sources, markets, titles)
         scraper_fut = pool.submit(scraper.fetch_all, sources, titles, markets)
 
-    gmail_raw = gmail_fut.result()
+    gmail_raw = gmail_fut.result() if gmail_fut else []
     rss_raw = rss_fut.result()
     scraper_raw = scraper_fut.result()
     raw_entries = gmail_raw + rss_raw + scraper_raw

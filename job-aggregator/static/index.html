@@ -478,6 +478,17 @@
   <a href="/setup" class="header-nav-link">⚙ Setup</a>
 </header>
 
+<!-- ── Gmail Auth Banner ── -->
+<div id="gmail-auth-banner" class="hidden" style="
+  position:fixed;top:0;left:0;right:0;z-index:9999;
+  background:#fef3c7;border-bottom:2px solid #f59e0b;
+  padding:10px 20px;display:flex;align-items:center;gap:12px;font-size:0.88rem">
+  <span>⚠️ <strong>Gmail token expired</strong> — email alert jobs are not being fetched.</span>
+  <span style="color:#6b7280">Run <code style="background:#fde68a;padding:2px 6px;border-radius:4px">venv/bin/python setup_gmail_auth.py</code> to re-authenticate, then refresh.</span>
+  <button onclick="document.getElementById('gmail-auth-banner').classList.add('hidden')"
+    style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:1.1rem;color:#92400e">✕</button>
+</div>
+
 <!-- ── CakeResume Auth Modal ── -->
 <div class="modal-overlay hidden" id="cake-auth-modal">
   <div class="modal" style="max-width:420px">
@@ -594,6 +605,7 @@
         <input type="file" id="resume-input" accept=".pdf" style="display:none">
         📄 Upload PDF
       </label>
+      <div id="resume-filename" style="display:none;font-size:0.75rem;color:#4b5563;margin-top:5px;word-break:break-all;padding:4px 6px;background:#f3f4f6;border-radius:4px"></div>
       <button id="resume-rematch" style="display:none;margin-top:8px;width:100%;padding:6px 0;border:1.5px solid #4f8ef7;border-radius:7px;background:#fff;color:#4f8ef7;font-size:0.82rem;font-weight:600;cursor:pointer;" title="Re-run match scores against all current jobs">⟳ Run Match Score</button>
       <div id="resume-status" class="resume-status"></div>
       <button id="resume-clear" class="resume-clear-btn" style="display:none">Clear resume</button>
@@ -616,6 +628,7 @@
   let MATCH_DATA = {};        // { job_id: { score, similarity, explanation } }
   let RESUME_ID  = null;
   let RESUME_STATUS = 'none'; // none | processing | done | error:…
+  let RESUME_FILENAME = null;
   let _pollTimer = null;
 
   // ── Pipeline state ────────────────────────────────────────
@@ -930,7 +943,17 @@
     const clearBtn  = _resumeClearBtn();
     const rematchBtn= _resumeRematchBtn();
     const bestOpt   = _sortBestMatch();
+    const fnEl      = document.getElementById('resume-filename');
     if (!el) return;
+
+    if (fnEl) {
+      if (RESUME_FILENAME && RESUME_STATUS !== 'none') {
+        fnEl.textContent = '📄 ' + RESUME_FILENAME;
+        fnEl.style.display = 'block';
+      } else {
+        fnEl.style.display = 'none';
+      }
+    }
 
     el.className = 'resume-status';
     if (RESUME_STATUS === 'none') {
@@ -971,6 +994,7 @@
       const res  = await fetch(`/api/resume/matches?resume_id=${RESUME_ID}`);
       const data = await res.json();
       RESUME_STATUS = data.status || 'none';
+      if (data.filename) RESUME_FILENAME = data.filename;
       MATCH_DATA = {};
       for (const m of data.matches || []) {
         MATCH_DATA[m.job_id] = { score: m.score, similarity: m.similarity, explanation: m.explanation };
@@ -990,6 +1014,7 @@
   async function uploadResume(file) {
     const formData = new FormData();
     formData.append('file', file);
+    RESUME_FILENAME = file.name;
     RESUME_STATUS = 'processing';
     updateResumeUI();
     try {
@@ -1011,6 +1036,7 @@
     if (_pollTimer) { clearInterval(_pollTimer); _pollTimer = null; }
     RESUME_ID = null;
     RESUME_STATUS = 'none';
+    RESUME_FILENAME = null;
     MATCH_DATA = {};
     // If currently sorted by best-match, switch back to newest
     const sel = document.getElementById('sort-select');
@@ -1098,6 +1124,8 @@
     const btn = document.getElementById('btn-refresh');
     btn.disabled = true;
     btn.textContent = '⟳ Updating…';
+    // Optimistically hide the banner — will re-show if still failing after this run
+    document.getElementById('gmail-auth-banner').classList.add('hidden');
     await fetch('/api/jobs/refresh', { method: 'POST' });
     _refreshPoll = setInterval(async () => {
       try {
@@ -1118,12 +1146,21 @@
             if (document.getElementById('cake-auth-modal').classList.contains('hidden'))
               showCakeAuthModal();
           }
+          if (data.gmail_auth_needed) {
+            showGmailAuthBanner();
+          } else {
+            document.getElementById('gmail-auth-banner').classList.add('hidden');
+          }
         }
       } catch(e) {}
     }, 3000);
   }
 
   document.getElementById('btn-refresh').addEventListener('click', startRefresh);
+
+  function showGmailAuthBanner() {
+    document.getElementById('gmail-auth-banner').classList.remove('hidden');
+  }
 
   // ── CakeResume Auth Modal ──────────────────────────────────
 

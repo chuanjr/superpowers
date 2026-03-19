@@ -31,6 +31,20 @@
   }
   .back-link:hover { color: #4f8ef7; }
 
+  /* ── Funnel time filter ── */
+  .funnel-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 48px 10px;
+  }
+  .funnel-label { font-size: 0.72rem; font-weight: 700; color: #9ca3af; text-transform: uppercase; letter-spacing: .04em; }
+  .time-toggle { display: flex; gap: 0; border: 1px solid #e5e7eb; border-radius: 6px; overflow: hidden; }
+  .time-toggle button {
+    padding: 4px 12px; font-size: 0.75rem; font-weight: 600; cursor: pointer;
+    border: none; background: #fff; color: #6b7280;
+  }
+  .time-toggle button.active { background: #111827; color: #fff; }
+  .time-toggle button:hover:not(.active) { background: #f3f4f6; }
+
   /* ── Stat cards ── */
   .stats-row {
     display: flex;
@@ -43,6 +57,33 @@
     border-radius: 10px;
     padding: 18px 24px;
     flex: 1;
+    position: relative;
+    text-decoration: none;
+    display: block;
+    transition: border-color 0.15s, box-shadow 0.15s, transform 0.1s;
+  }
+  a.stat-card {
+    cursor: pointer;
+  }
+  a.stat-card:hover {
+    border-color: #93c5fd;
+    box-shadow: 0 2px 12px rgba(59,130,246,0.1);
+    transform: translateY(-1px);
+  }
+  a.stat-card:hover .label {
+    color: #3b82f6;
+  }
+  a.stat-card::after {
+    content: '↗';
+    position: absolute;
+    bottom: 10px;
+    right: 12px;
+    font-size: 0.72rem;
+    color: #9ca3af;
+    transition: color 0.15s;
+  }
+  a.stat-card:hover::after {
+    color: #3b82f6;
   }
   .stat-card .label {
     font-size: 0.7rem;
@@ -51,6 +92,7 @@
     letter-spacing: .06em;
     color: #9ca3af;
     margin-bottom: 8px;
+    transition: color 0.15s;
   }
   .stat-card .value {
     font-size: 2rem;
@@ -264,8 +306,9 @@
   .drawer-overlay.open { display: block; }
   .drawer {
     position: fixed; top: 0; right: 0; bottom: 0;
-    width: 480px;
-    max-width: 95vw;
+    width: 75vw;
+    max-width: 1100px;
+    min-width: 560px;
     background: #fff;
     box-shadow: -4px 0 32px rgba(0,0,0,.15);
     display: flex; flex-direction: column;
@@ -290,7 +333,7 @@
   .btn-close-drawer:hover { color: #374151; }
   .drawer-body {
     flex: 1; overflow-y: auto;
-    padding: 20px 24px;
+    padding: 20px 32px;
   }
 
   /* ── Package sections ── */
@@ -336,9 +379,19 @@
   .banner-warn  { background: #fff7ed; border: 1px solid #fed7aa; border-radius: 6px;
                   padding: 7px 12px; font-size: 0.78rem; color: #92400e; margin-bottom: 8px; }
   .banner-coach { background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 6px;
-                  padding: 7px 12px; font-size: 0.78rem; color: #1e40af; margin-bottom: 8px; }
-  .banner-coach ul { margin: 4px 0 0 14px; }
-  .banner-coach li { margin-bottom: 2px; }
+                  padding: 10px 14px; font-size: 0.78rem; color: #1e40af; margin-bottom: 8px; }
+  .coach-q-card { background: #fff; border: 1px solid #bfdbfe; border-radius: 6px;
+                  padding: 10px 12px; margin-top: 8px; }
+  .coach-q-text { font-size: 0.82rem; color: #1e3a8a; margin-bottom: 6px; line-height: 1.4; }
+  .coach-q-answer { width: 100%; box-sizing: border-box; font-size: 0.82rem; border: 1px solid #d1d5db;
+                    border-radius: 4px; padding: 6px 8px; resize: vertical; min-height: 52px;
+                    font-family: inherit; color: #111827; }
+  .coach-q-answer:focus { outline: none; border-color: #6366f1; box-shadow: 0 0 0 2px #eef2ff; }
+  .btn-reoptimize { margin-top: 10px; background: #6366f1; color: #fff; border: none;
+                    border-radius: 6px; padding: 7px 14px; font-size: 0.82rem; cursor: pointer;
+                    font-weight: 600; width: 100%; }
+  .btn-reoptimize:hover { background: #4f46e5; }
+  .btn-reoptimize:disabled { opacity: 0.6; cursor: default; }
   .story-match { background: #f9fafb; border-radius: 8px; padding: 10px 14px; margin-bottom: 8px; }
   .story-match-id { font-size: 0.72rem; font-weight: 700; color: #818cf8; margin-bottom: 2px; }
   .story-match-bullet { font-size: 0.84rem; color: #374151; }
@@ -510,37 +563,48 @@
   </div>
   <div style="display:flex;align-items:center;gap:16px">
     <div class="updated" id="header-updated"></div>
-    <div class="header-actions">
-      <a href="/setup" class="btn-header-action">⚙ Setup</a>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div id="pipeline-resume-chip" style="display:none;font-size:0.73rem;color:#4b5563;padding:3px 8px;background:#f3f4f6;border-radius:12px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"></div>
+      <div class="header-actions">
+        <a href="/setup" class="btn-header-action">⚙ Setup</a>
+      </div>
     </div>
   </div>
 </div>
 
+<div class="funnel-header">
+  <span class="funnel-label">Funnel</span>
+  <div class="time-toggle">
+    <button id="toggle-alltime" class="active" onclick="setFunnelPeriod('all')">All time</button>
+    <button id="toggle-7d" onclick="setFunnelPeriod('7d')">7 days</button>
+  </div>
+</div>
+
 <div class="stats-row" style="align-items:center">
-  <div class="stat-card" style="flex:1">
+  <a href="/jobs" class="stat-card" style="flex:1">
     <div class="label">Total Jobs</div>
-    <a href="/jobs" class="value" id="stat-scout" style="text-decoration:none;color:inherit">—</a>
-  </div>
+    <div class="value" id="stat-scout">—</div>
+  </a>
   <div style="font-size:1.2rem;color:#d1d5db;flex:0 0 auto">→</div>
-  <div class="stat-card" style="flex:1">
+  <a href="/review" class="stat-card" style="flex:1">
     <div class="label">Qualified</div>
-    <a href="/review" class="value" id="stat-analysis" style="text-decoration:none;color:inherit">—</a>
-  </div>
+    <div class="value" id="stat-analysis">—</div>
+  </a>
   <div style="font-size:1.2rem;color:#d1d5db;flex:0 0 auto">→</div>
-  <div class="stat-card" style="flex:1">
+  <a href="/pipeline?filter=recommended" class="stat-card" style="flex:1">
     <div class="label">Preferred</div>
-    <a href="/pipeline?filter=recommended" class="value" id="stat-approved" style="text-decoration:none;color:inherit">—</a>
-  </div>
+    <div class="value" id="stat-approved">—</div>
+  </a>
   <div style="font-size:1.2rem;color:#d1d5db;flex:0 0 auto">→</div>
-  <div class="stat-card" style="flex:1">
+  <a href="/pipeline?filter=applied" class="stat-card" style="flex:1">
     <div class="label">Application</div>
-    <a href="/pipeline?filter=applied" class="value blue" id="stat-applied" style="text-decoration:none">—</a>
-  </div>
+    <div class="value blue" id="stat-applied">—</div>
+  </a>
   <div style="font-size:1.2rem;color:#d1d5db;flex:0 0 auto">→</div>
-  <div class="stat-card" style="flex:1">
+  <a href="/pipeline?filter=interviewing" class="stat-card" style="flex:1">
     <div class="label">Interview</div>
-    <a href="/pipeline?filter=interviewing" class="value amber" id="stat-interviewing" style="text-decoration:none">—</a>
-  </div>
+    <div class="value amber" id="stat-interviewing">—</div>
+  </a>
 </div>
 
 
@@ -710,6 +774,13 @@
     PIPELINE_IDS = new Set(ALL_ENTRIES.map(e => e.job_id));
     RESUME_ID    = matchData.resume_id || null;
 
+    // Show active resume filename
+    const chip = document.getElementById('pipeline-resume-chip');
+    if (chip && matchData.filename) {
+      chip.textContent = '📄 ' + matchData.filename;
+      chip.style.display = 'block';
+    }
+
     const identity = pipelineData.identity || {};
     if (identity.name) {
       document.getElementById('header-name').textContent = identity.name;
@@ -725,10 +796,26 @@
 
   // ── Stats ─────────────────────────────────────────────────
 
+  let _funnelPeriod = 'all';
+
+  function setFunnelPeriod(period) {
+    _funnelPeriod = period;
+    document.getElementById('toggle-alltime').classList.toggle('active', period === 'all');
+    document.getElementById('toggle-7d').classList.toggle('active', period === '7d');
+    updateStats();
+  }
+
   async function updateStats() {
-    const approved     = ALL_ENTRIES.filter(e => e.status === 'recommended').length;
-    const applied      = ALL_ENTRIES.filter(e => e.status === 'applied').length;
-    const interviewing = ALL_ENTRIES.filter(e => e.status === 'interviewing').length;
+    const since = _funnelPeriod === '7d' ? '7d' : '';
+    const cutoff7d = since ? new Date(Date.now() - 7 * 86400000).toISOString() : null;
+
+    const entries = cutoff7d
+      ? ALL_ENTRIES.filter(e => (e.added_at || '') >= cutoff7d)
+      : ALL_ENTRIES;
+
+    const approved     = entries.filter(e => e.status === 'recommended').length;
+    const applied      = entries.filter(e => e.status === 'applied').length;
+    const interviewing = entries.filter(e => e.status === 'interviewing').length;
 
     document.getElementById('stat-approved').textContent     = approved;
     document.getElementById('stat-applied').textContent      = applied;
@@ -736,9 +823,10 @@
 
     // Fetch Scout (total jobs) and Analysis (triage count) from server
     try {
+      const qs = since ? `?since=${since}` : '';
       const [scoutRes, analysisRes] = await Promise.all([
-        fetch('/api/jobs/count'),
-        fetch('/api/review/count'),
+        fetch(`/api/jobs/count${qs}`),
+        fetch(`/api/review/count${qs}`),
       ]);
       if (scoutRes.ok)    document.getElementById('stat-scout').textContent    = (await scoutRes.json()).count;
       if (analysisRes.ok) document.getElementById('stat-analysis').textContent = (await analysisRes.json()).count;
@@ -1020,6 +1108,20 @@
   async function loadPackage(jobId) {
     const data = await fetch(`/api/pipeline/${encodeURIComponent(jobId)}/package`).then(r => r.json());
     renderPackage(data);
+    // If auto-generating (approved from review), start polling automatically
+    if (data.status === 'processing') {
+      if (_pkgPollTimer) clearInterval(_pkgPollTimer);
+      _pkgPollTimer = setInterval(async () => {
+        if (_pkgJobId !== jobId) { clearInterval(_pkgPollTimer); return; }
+        const d = await fetch(`/api/pipeline/${encodeURIComponent(jobId)}/package`).then(r => r.json());
+        if (d.status !== 'processing') {
+          clearInterval(_pkgPollTimer);
+          const btn = document.getElementById('pkg-gen-btn');
+          if (btn) { btn.disabled = false; btn.textContent = '↺ Regenerate'; }
+          renderPackage(d);
+        }
+      }, 3000);
+    }
   }
 
   function renderPackage(data) {
@@ -1084,17 +1186,41 @@
 
     if (data.ats_gap) {
       const ats = data.ats_gap;
-      const score = ats.score ?? '?';
+      const noJd = ats.no_jd;
+      const score = noJd ? null : (ats.score ?? null);
+      const safe = !noJd && score !== null && score >= 70;
+      const scoreColor = noJd ? '#9ca3af' : score >= 70 ? '#15803d' : score >= 50 ? '#d97706' : '#dc2626';
+      const scoreLabel = noJd
+        ? 'No JD — score unavailable'
+        : `${score}% ${safe ? '✓ Safe zone' : '⚠ Below 70%'}`;
+
       const present = (ats.present || []).map(k => `<span class="chip-green">${escHtml(k)}</span>`).join('');
       const missing = (ats.missing || []).map(k => `<span class="chip-yellow">${escHtml(k)}</span>`).join('');
-      html += section(`ATS Keywords [${score}% coverage]`, `
+      const highFreq = (ats.high_freq_missing || []).map(k =>
+        `<span class="chip-red" title="Appears 2+ times in JD">${escHtml(k)}</span>`).join('');
+
+      // Dimension pills
+      const dims = [];
+      if (!noJd) {
+        if (ats.title_match === true)  dims.push(`<span style="font-size:0.72rem;padding:2px 8px;border-radius:10px;background:#d1fae5;color:#065f46">✓ Title match</span>`);
+        if (ats.title_match === false) dims.push(`<span style="font-size:0.72rem;padding:2px 8px;border-radius:10px;background:#fee2e2;color:#991b1b">✗ Title mismatch</span>`);
+        if (ats.required_coverage != null && ats.required_coverage < 100)
+          dims.push(`<span style="font-size:0.72rem;padding:2px 8px;border-radius:10px;background:#fef3c7;color:#92400e">Required quals: ${ats.required_coverage}%</span>`);
+      }
+
+      const noJdNote = noJd ? `<div style="color:#9ca3af;font-size:0.82rem;font-style:italic;margin-bottom:6px">Job description unavailable (login-walled). Paste the JD into the job's description field and regenerate to get a real score.</div>` : '';
+      html += section(`ATS [<span style="color:${scoreColor};font-weight:700">${scoreLabel}</span>]`, `
+        ${noJdNote}
+        ${dims.length ? `<div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">${dims.join('')}</div>` : ''}
+        ${highFreq ? `<div style="margin-bottom:6px"><span style="font-size:0.72rem;color:#9ca3af;font-weight:600">HIGH-FREQ MISSING &nbsp;</span><div class="pkg-chips" style="display:inline-flex">${highFreq}</div></div>` : ''}
         ${present ? `<div style="margin-bottom:6px"><span style="font-size:0.72rem;color:#9ca3af;font-weight:600">PRESENT &nbsp;</span><div class="pkg-chips" style="display:inline-flex">${present}</div></div>` : ''}
         ${missing ? `<div><span style="font-size:0.72rem;color:#9ca3af;font-weight:600">MISSING &nbsp;</span><div class="pkg-chips" style="display:inline-flex">${missing}</div></div>` : ''}`);
     }
 
     if (data.ats_resume) {
-      const atsScore = data.ats_gap?.score ?? 100;
-      const optimizeBtn = atsScore < 85
+      const atsScore = data.ats_gap?.score;  // null = no JD, undefined = not computed
+      const noJd = data.ats_gap?.no_jd;
+      const optimizeBtn = (!noJd && atsScore !== null && atsScore !== undefined && atsScore < 85)
         ? `<button id="pkg-optimize-btn" style="margin-bottom:8px;background:#7c3aed;color:#fff;border:none;padding:5px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem">✨ Optimize Resume (score ${atsScore}%)</button><br>`
         : '';
       html += section('📄 ATS-Optimized Resume', `
@@ -1102,8 +1228,14 @@
         <div id="pkg-location-note"></div>
         <div id="pkg-coach-questions"></div>
         <div id="pkg-coach-conflicts"></div>
-        <div style="font-size:0.78rem;color:#6b7280;margin-bottom:8px">Edit below, then save to re-check ATS score, or download as PDF.</div>
-        <textarea class="pkg-textarea" id="pkg-ats-resume" rows="18" style="font-family:monospace;font-size:0.82rem">${escHtml(data.ats_resume)}</textarea>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+          <span style="font-size:0.78rem;color:#6b7280">Edit below, then save to re-check ATS score, or download as PDF.</span>
+          <label id="pkg-custom-resume-label" style="cursor:pointer;font-size:0.75rem;font-weight:600;color:#6366f1;padding:3px 10px;border:1px solid #c7d2fe;border-radius:12px;background:#eef2ff;white-space:nowrap">
+            <input type="file" id="pkg-custom-resume-input" accept=".pdf" style="display:none">
+            ${data.custom_resume_filename ? `📄 ${escHtml(data.custom_resume_filename)}` : '⬆ Upload position resume'}
+          </label>
+        </div>
+        <textarea class="pkg-textarea" id="pkg-ats-resume" rows="18" style="font-family:monospace;font-size:0.82rem;overflow-y:hidden">${escHtml(data.ats_resume)}</textarea>
         <div id="pkg-diff-panel"></div>
         <div style="display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap">
           <button class="copy-btn" id="pkg-resume-save-btn" style="padding:5px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem">💾 Save + Re-check ATS</button>
@@ -1121,14 +1253,59 @@
     if (data.value_prop) {
       html += section('Value Prop / Cover Letter', `
         <textarea class="pkg-textarea" id="pkg-value-prop">${escHtml(data.value_prop)}</textarea>
-        <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+        <div style="margin-top:10px;background:#f9fafb;border:1px solid #e5e7eb;border-radius:8px;padding:12px">
+          <div style="font-size:0.78rem;font-weight:600;color:#374151;margin-bottom:6px">✏️ 讓故事更真實 — 告訴 AI 你為什麼真的在乎這個機會</div>
+          <div style="font-size:0.73rem;color:#6b7280;margin-bottom:8px;line-height:1.5">
+            用你自己的話回答以下任何問題（不用全部回答）：<br>
+            • 為什麼是這家公司，而不是其他類似的公司？<br>
+            • 你有用過他們的產品嗎？你注意到什麼？<br>
+            • 他們的文化、使命或做事方式，有哪一點和你的價值觀很像？<br>
+            • 這個職缺的哪個具體面向，和你之前做過的事情很呼應？
+          </div>
+          <textarea id="pkg-why-input" rows="3" placeholder="e.g. 我一直在用他們的產品，發現他們在 growth loop 的設計上有個很有趣的地方…" style="width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:0.82rem;font-family:inherit;resize:vertical;line-height:1.5;color:#374151"></textarea>
+        </div>
+        <div style="display:flex;gap:8px;margin-top:8px;align-items:center">
           <button class="copy-btn" onclick="copyField('pkg-value-prop', this)">⎘ Copy</button>
-          <button class="copy-btn" id="pkg-regen-cover-btn" style="padding:5px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem">↺ Regenerate from ATS Resume</button>
+          <button class="copy-btn" id="pkg-regen-cover-btn" style="padding:5px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem">↺ Regenerate</button>
           <span id="pkg-regen-status" style="font-size:0.78rem;color:#6b7280"></span>
         </div>`);
     }
 
     body.innerHTML = html || '<div class="pkg-status-msg">Package generated — no content available.</div>';
+
+    // Auto-expand the ATS resume textarea to its full content height
+    const _atsTA = document.getElementById('pkg-ats-resume');
+    if (_atsTA) {
+      _atsTA.style.height = 'auto';
+      _atsTA.style.height = _atsTA.scrollHeight + 'px';
+      _atsTA.addEventListener('input', () => {
+        _atsTA.style.height = 'auto';
+        _atsTA.style.height = _atsTA.scrollHeight + 'px';
+      });
+    }
+
+    // Per-job resume upload
+    const _customInput = document.getElementById('pkg-custom-resume-input');
+    if (_customInput) {
+      _customInput.addEventListener('change', async () => {
+        const file = _customInput.files[0];
+        if (!file) return;
+        const label = document.getElementById('pkg-custom-resume-label');
+        if (label) label.textContent = '⏳ Uploading…';
+        const fd = new FormData();
+        fd.append('file', file);
+        try {
+          const res = await fetch(`/api/pipeline/${encodeURIComponent(_pkgJobId)}/upload-resume`, {
+            method: 'POST', body: fd,
+          });
+          const d = await res.json();
+          if (!res.ok) { alert(d.detail || 'Upload failed'); return; }
+          if (label) label.innerHTML = `<input type="file" id="pkg-custom-resume-input" accept=".pdf" style="display:none">📄 ${escHtml(d.filename)}`;
+          // Reload package to show updated resume text
+          await renderPkgDrawer(_pkgJobId);
+        } catch { if (label) label.textContent = '⬆ Upload position resume'; alert('Upload failed'); }
+      });
+    }
 
     // Update culture score in ALL_ENTRIES
     if (data.culture_score != null && _pkgJobId) {
@@ -1189,6 +1366,55 @@
         </div>
         <div class="diff-panel-body" style="display:block">${lines}</div>
       </div>`;
+  }
+
+  // ── Coach questions panel (interactive Q&A) ───────────────────────────────────
+  function _renderCoachQuestions(questions) {
+    const el = document.getElementById('pkg-coach-questions');
+    if (!el) return;
+    if (!questions.length) { el.innerHTML = ''; return; }
+
+    const cards = questions.map((q, i) => `
+      <div class="coach-q-card">
+        <div class="coach-q-text">❓ ${escHtml(q)}</div>
+        <textarea class="coach-q-answer" data-qi="${i}" placeholder="Type your answer here…" rows="2"></textarea>
+      </div>`).join('');
+
+    el.innerHTML = `
+      <div class="banner-coach">
+        <div style="font-weight:700;margin-bottom:2px">🎓 Coach needs your input</div>
+        <div style="color:#3b82f6;font-size:0.76rem;margin-bottom:4px">Answer below, then re-optimize to incorporate your story into the resume.</div>
+        ${cards}
+        <button class="btn-reoptimize" id="pkg-reoptimize-btn">✨ Re-optimize with my answers</button>
+      </div>`;
+
+    document.getElementById('pkg-reoptimize-btn').addEventListener('click', async () => {
+      const btn = document.getElementById('pkg-reoptimize-btn');
+      const answers = [...el.querySelectorAll('.coach-q-answer')].map((ta, i) => ({
+        question: questions[i], answer: ta.value.trim()
+      })).filter(qa => qa.answer);
+      if (!answers.length) { alert('Please answer at least one question first.'); return; }
+
+      btn.textContent = '⏳ Re-optimizing…'; btn.disabled = true;
+      try {
+        const res = await fetch(`/api/pipeline/${encodeURIComponent(_pkgJobId)}/optimize-resume`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ coach_answers: answers }),
+        });
+        if (!res.ok) { alert('Re-optimization failed — please try again.'); return; }
+        const data = await res.json();
+        const ta = document.getElementById('pkg-ats-resume');
+        if (ta) { ta.value = data.ats_resume || ''; ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }
+        const newScore = data.ats_gap?.score ?? '?';
+        const statusEl = document.getElementById('pkg-ats-recheck-status');
+        if (statusEl) statusEl.textContent = `Score: ${newScore}`;
+        _renderCoachQuestions(data.coach_questions || []);
+        _renderCoachConflicts(data.coach_conflicts || []);
+        _renderDiff(data.diff || []);
+      } catch { alert('Re-optimization failed — please try again.'); }
+      finally { btn.textContent = '✨ Re-optimize with my answers'; btn.disabled = false; }
+    });
   }
 
   // ── Coach conflicts panel ─────────────────────────────────────────────────────
@@ -1284,19 +1510,24 @@
         if (!res.ok) { alert('Optimization failed — please try again.'); optBtn.disabled = false; optBtn.textContent = '✨ Optimize Resume'; return; }
         const data = await res.json();
         const ta = document.getElementById('pkg-ats-resume');
-        if (ta) ta.value = data.ats_resume || '';
+        if (ta) { ta.value = data.ats_resume || ''; ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; }
 
         // ── ATS score status ──
-        const newScore = data.ats_gap?.score ?? '?';
+        const noJdOpt = data.ats_gap?.no_jd;
+        const newScore = data.ats_gap?.score ?? null;
         const improved = data.score_improved;
-        const origScore = data.original_score ?? '?';
+        const origScore = data.original_score ?? null;
         const statusEl = document.getElementById('pkg-ats-recheck-status');
         if (statusEl) {
-          statusEl.innerHTML = improved
-            ? `<span style="color:#15803d">✓ Score: ${origScore}% → ${newScore}% 🎉</span>`
-            : `<span style="color:#d97706">⚠ Score unchanged at ${newScore}% (kept best version)</span>`;
+          if (noJdOpt) {
+            statusEl.innerHTML = `<span style="color:#9ca3af">⚠ No JD — score unavailable (resume was rewritten against general best practices)</span>`;
+          } else {
+            statusEl.innerHTML = improved
+              ? `<span style="color:#15803d">✓ Score: ${origScore ?? '?'}% → ${newScore ?? '?'}% 🎉</span>`
+              : `<span style="color:#d97706">⚠ Score unchanged at ${newScore ?? '?'}% (kept best version)</span>`;
+          }
         }
-        optBtn.textContent = `✨ Score: ${newScore}% — Re-optimize`;
+        optBtn.textContent = noJdOpt ? '✨ Re-optimize (no JD)' : `✨ Score: ${newScore ?? '?'}% — Re-optimize`;
         optBtn.disabled = false;
 
         // ── Location note ──
@@ -1307,13 +1538,7 @@
         }
 
         // ── Coach questions ──
-        const coachEl = document.getElementById('pkg-coach-questions');
-        if (coachEl && data.coach_questions?.length) {
-          const qs = data.coach_questions.map(q => `<li>${escHtml(q)}</li>`).join('');
-          coachEl.innerHTML = `<div class="banner-coach">🎓 <strong>Coach needs your input:</strong><ul>${qs}</ul></div>`;
-        } else if (coachEl) {
-          coachEl.innerHTML = '';
-        }
+        _renderCoachQuestions(data.coach_questions || []);
 
         // ── Coach conflicts (career coach review pass) ──
         _renderCoachConflicts(data.coach_conflicts || []);
@@ -1341,7 +1566,10 @@
         });
         if (!res.ok) { alert('ATS re-check failed.'); return; }
         const data = await res.json();
-        if (statusEl && data.ats_gap) statusEl.textContent = `✓ ATS score: ${data.ats_gap.score ?? '?'}%`;
+        if (statusEl && data.ats_gap) {
+          const g = data.ats_gap;
+          statusEl.textContent = g.no_jd ? '⚠ No JD — score unavailable' : `✓ ATS score: ${g.score ?? '?'}%`;
+        }
       } catch { /* ignore */ }
       saveBtn.textContent = '💾 Save + Re-check ATS';
       saveBtn.disabled = false;
@@ -1355,15 +1583,20 @@
       regenBtn.disabled = true;
       const statusEl = document.getElementById('pkg-regen-status');
       if (statusEl) statusEl.textContent = '';
+      const whyInput = (document.getElementById('pkg-why-input')?.value || '').trim();
       try {
-        const res = await fetch(`/api/pipeline/${encodeURIComponent(_pkgJobId)}/regen-cover-letter`, { method: 'POST' });
+        const res = await fetch(`/api/pipeline/${encodeURIComponent(_pkgJobId)}/regen-cover-letter`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ why_input: whyInput }),
+        });
         if (!res.ok) { alert('Regeneration failed.'); return; }
         const data = await res.json();
         const ta = document.getElementById('pkg-value-prop');
         if (ta && data.value_prop) ta.value = data.value_prop;
-        if (statusEl) statusEl.textContent = '✓ Regenerated';
+        if (statusEl) statusEl.textContent = whyInput ? '✓ Regenerated with your context' : '✓ Regenerated';
       } catch { /* ignore */ }
-      regenBtn.textContent = '↺ Regenerate from ATS Resume';
+      regenBtn.textContent = '↺ Regenerate';
       regenBtn.disabled = false;
       return;
     }
@@ -1610,8 +1843,9 @@
           cultureBtn.title = 'Check Culture Fit';
           return;
         }
-        // Poll for result via lightweight package endpoint (not full pipeline)
+        // Poll for result — company research + LLM can take up to 2 min
         let tries = 0;
+        const MAX_TRIES = 90; // 90 × 2s = 3 min
         const poll = setInterval(async () => {
           tries++;
           const pkg = await fetch(`/api/pipeline/${encodeURIComponent(jobId)}/package`).then(r => r.json()).catch(() => null);
@@ -1628,7 +1862,7 @@
             cultureBtn.title = 'Check Culture Fit';
             alert('Culture check failed — please try again.');
           }
-          if (tries >= 20) {
+          if (tries >= MAX_TRIES) {
             clearInterval(poll);
             cultureBtn.classList.remove('running');
             cultureBtn.title = 'Check Culture Fit';

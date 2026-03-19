@@ -169,6 +169,16 @@ def init_db(path: Path = DB_PATH) -> None:
         conn.commit()
     except Exception:
         pass  # Column already exists
+    try:
+        conn.execute("ALTER TABLE application_packages ADD COLUMN custom_resume_text TEXT")
+        conn.commit()
+    except Exception:
+        pass
+    try:
+        conn.execute("ALTER TABLE application_packages ADD COLUMN custom_resume_filename TEXT")
+        conn.commit()
+    except Exception:
+        pass
     conn.close()
 
 
@@ -656,7 +666,8 @@ def get_application_package(job_id: str, resume_id: int) -> Optional[dict]:
 def upsert_application_package(job_id: str, resume_id: int, **fields) -> None:
     now = datetime.now(timezone.utc).isoformat()
     allowed = {"culture_score", "culture_signals", "job_translation",
-               "story_matches", "ats_gap", "ats_resume", "why_company", "value_prop", "status"}
+               "story_matches", "ats_gap", "ats_resume", "why_company", "value_prop", "status",
+               "custom_resume_text", "custom_resume_filename"}
     cols = {k: v for k, v in fields.items() if k in allowed}
 
     with _conn() as conn:

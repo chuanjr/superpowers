@@ -804,7 +804,7 @@
 
   async function approveJob(jobId) {
     const btn = document.querySelector(`#card-${CSS.escape(jobId)} .btn-approve`);
-    if (btn) { btn.disabled = true; btn.textContent = '✓ Added!'; }
+    if (btn) { btn.disabled = true; btn.textContent = '✓ Added! Generating package…'; }
     await fetch(`/api/review/${encodeURIComponent(jobId)}/approve`, { method: 'POST' });
     ALL_ENTRIES = ALL_ENTRIES.filter(e => e.job_id !== jobId);
     render();

@@ -16,20 +16,67 @@ import re as _re
 
 import anthropic
 
+
+def _candidate_name() -> str:
+    """Return the candidate's name from config.yaml, falling back to 'the candidate'."""
+    try:
+        from config_loader import load_config
+        cfg = load_config()
+        return cfg.get("candidate", {}).get("name", "") or "the candidate"
+    except Exception:
+        return "the candidate"
+
 # ── Resume section splitter ────────────────────────────────────────────────────
 
 _EXPERIENCE_HEADERS = {
     "experience", "work experience", "professional experience",
-    "employment", "career", "work history",
+    "employment", "career", "work history", "employment history",
+    "career history",
 }
 
+# Plain-text section names found in real PDF resumes (no markdown prefix)
+_PLAIN_SECTION_NAMES = {
+    "summary", "professional summary", "profile", "objective", "about",
+    "experience", "work experience", "professional experience", "employment",
+    "employment history", "career", "career history", "work history",
+    "education", "academic background",
+    "skills", "technical skills", "core competencies", "key skills",
+    "projects", "personal projects",
+    "certifications", "certificates", "awards", "honors", "achievements",
+    "languages", "publications", "volunteer", "activities", "interests",
+}
+
+
+def _detect_section(stripped: str) -> tuple[bool, str]:
+    """Return (is_section, normalized_title) for a stripped line."""
+    if stripped.startswith("## ") or stripped.startswith("# "):
+        return True, stripped.lstrip("#").strip().lower()
+    lower = stripped.lower()
+    if lower in _PLAIN_SECTION_NAMES:
+        return True, lower
+    # All-caps short line (e.g. "WORK EXPERIENCE")
+    if (2 <= len(stripped) <= 50
+            and _re.match(r'^[A-Z][A-Z\s&/\-]+$', stripped)):
+        return True, lower
+    return False, ""
+
+
+def _is_exp_title(title: str) -> bool:
+    return (title in _EXPERIENCE_HEADERS
+            or "experience" in title or "work" in title
+            or "career" in title or "employment" in title)
+
+
 def _split_resume_sections(resume_raw: str) -> tuple[str, str, str]:
-    """Split a markdown-formatted resume into (header, experience_block, rest).
+    """Split a resume into (header, experience_block, rest).
+
+    Handles both markdown-style (## EXPERIENCE) and plain-text (EXPERIENCE) headers
+    as produced by PDF text extraction.
 
     Returns:
-        header: Everything before the first ## section (name + contact lines)
-        experience_block: The ## EXPERIENCE section text (header + bullets)
-        rest: All remaining sections verbatim (education, skills, etc.)
+        header: Name + contact + any sections before EXPERIENCE (e.g. SUMMARY)
+        experience_block: The EXPERIENCE section (label line + all content)
+        rest: All remaining sections (SKILLS, EDUCATION, etc.)
     """
     lines = resume_raw.split("\n")
     header_lines: list[str] = []
@@ -39,30 +86,27 @@ def _split_resume_sections(resume_raw: str) -> tuple[str, str, str]:
     state = "header"  # header | exp | rest
     for line in lines:
         stripped = line.strip()
-        is_section = stripped.startswith("## ") or stripped.startswith("# ")
+        is_section, title = _detect_section(stripped)
+
         if is_section:
-            title = stripped.lstrip("#").strip().lower()
-            if title in _EXPERIENCE_HEADERS or "experience" in title or "work" in title or "career" in title:
+            if _is_exp_title(title):
                 state = "exp"
+                exp_lines.append(line)
             elif state == "exp":
-                # Moving past experience section
                 state = "rest"
-        if state == "header":
-            if is_section:
-                # First section encountered — if it's experience, switch
-                title = stripped.lstrip("#").strip().lower()
-                if "experience" in title or "work" in title or "career" in title:
-                    state = "exp"
-                    exp_lines.append(line)
-                else:
-                    state = "rest"
-                    rest_lines.append(line)
-            else:
+                rest_lines.append(line)
+            elif state == "header":
+                # Non-experience section before EXPERIENCE (SUMMARY etc.) — keep in header
                 header_lines.append(line)
-        elif state == "exp":
-            exp_lines.append(line)
+            else:
+                rest_lines.append(line)
         else:
-            rest_lines.append(line)
+            if state == "header":
+                header_lines.append(line)
+            elif state == "exp":
+                exp_lines.append(line)
+            else:
+                rest_lines.append(line)
 
     return "\n".join(header_lines), "\n".join(exp_lines), "\n".join(rest_lines)
 
@@ -300,30 +344,67 @@ Available stories:
 # ── ATS keyword check ──────────────────────────────────────────────────────────
 
 def check_ats_sync(resume_raw: str, jd_text: str) -> dict:
-    """Compare JD keywords against resume for ATS coverage."""
+    """Compare JD keywords against resume across 4 ATS dimensions.
+
+    Returns:
+        present: list[str]       — keywords found in both JD and resume
+        missing: list[str]       — important JD keywords absent from resume
+        score: int|None          — 0-100 overall coverage (null if no JD)
+        no_jd: bool              — True when JD is too short to score
+        title_match: bool|None   — whether candidate title matches job title
+        required_coverage: int   — % of Required Qualifications covered (0-100)
+        high_freq_missing: list  — keywords appearing 2+ times in JD but not in resume
+        safe: bool               — True when score >= 70
+    """
+    if len(jd_text.strip()) < 50:
+        return {"present": [], "missing": [], "score": None, "no_jd": True,
+                "title_match": None, "required_coverage": None,
+                "high_freq_missing": [], "safe": False}
     client = _get_claude()
-    prompt = f"""Check ATS keyword coverage between this resume and job description.
-Return ONLY valid JSON:
+    prompt = f"""You are an ATS (Applicant Tracking System) evaluator. Analyze keyword coverage across 4 dimensions.
+Return ONLY valid JSON matching this schema exactly:
 {{
-  "present": ["<important keyword found in both resume and JD>"],
-  "missing": ["<important JD keyword NOT in resume — candidate should add>"],
-  "score": <0-100 coverage percentage>
+  "present": ["keyword found in both JD and resume — max 8, specific terms only"],
+  "missing": ["important JD keyword missing from resume — max 8"],
+  "high_freq_missing": ["keyword that appears 2+ times in JD but NOT in resume — max 5"],
+  "title_match": true/false/null,
+  "required_coverage": <integer 0-100>,
+  "score": <integer 0-100>
 }}
 
-Focus on: tools, skills, methodologies, role-specific terms. Max 8 items per list.
-Only flag truly important keywords — not generic words like "product" or "team".
+SCORING RULES:
+- score: overall ATS keyword coverage. 70+ = safe zone. Weight: high_freq keywords matter 2x.
+- title_match: true if candidate's most recent job title closely matches the job title being applied to.
+  Use null if job title cannot be determined from JD.
+- required_coverage: percentage of "Required Qualifications" bullets in the JD that the resume addresses.
+  Use 100 if no Required section is found.
+- high_freq_missing: keywords appearing 2+ times in the JD that are completely absent from the resume.
+  These are the highest priority gaps — ATS systems weight repeated terms heavily.
+
+WHAT TO INCLUDE:
+- Tools, technologies, platforms (SQL, Amplitude, Mixpanel, A/B testing frameworks)
+- Role-specific methodologies (growth loops, activation funnel, retention analysis)
+- Exact phrases from Required Qualifications that are absent from resume
+- Job title / seniority terms if mismatched
+
+WHAT TO EXCLUDE:
+- Generic management terms ("stakeholder", "cross-functional", "team player")
+- Soft skills unless explicitly required in JD ("bilingual" is OK, "leadership" is not)
 
 JD:
-{jd_text[:2000]}
+{jd_text[:2500]}
 
 Resume:
 {resume_raw[:3000]}"""
     msg = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=400,
+        max_tokens=600,
         messages=[{"role": "user", "content": prompt}],
     )
-    return json.loads(_strip_code_fence(msg.content[0].text))
+    result = json.loads(_strip_code_fence(msg.content[0].text))
+    result["no_jd"] = False
+    result["safe"] = (result.get("score") or 0) >= 70
+    return result
 
 
 # ── ATS-optimized resume ───────────────────────────────────────────────────────
@@ -370,12 +451,13 @@ Max 3 questions. Omit entirely if everything is verifiable from the text above."
     # FRAMEWORK: GraceWeng_ResumeJudgmentFramework.md
     # Priority order: Bullet quality (earned secret PM judgment) > ATS coverage
     # ATS keywords go into Skills section ONLY — never forced into bullets
+    _name = _candidate_name()
     if deep_optimize:
-        prompt = f"""You are Grace Weng's dedicated resume coach applying her personal Resume Judgment Framework.
+        prompt = f"""You are {_name}'s dedicated resume coach applying their personal Resume Judgment Framework.
 Your output is a submission-ready experience section — every bullet must pass ALL four checks below.
 
 ═══ BULLET STANDARD — ALL 4 REQUIRED ═══
-STRUCTURE: Outcome (specific number or clear behavioral signal) + Method (what she did) + Strategic Why (why THIS decision, not another)
+STRUCTURE: Outcome (specific number or clear behavioral signal) + Method (what they did) + Strategic Why (why THIS decision, not another)
 
 Checklist — reject any bullet that fails:
 □ Has a specific number OR a concrete behavioral insight (not vague)
@@ -433,7 +515,7 @@ These will be added to her Skills section separately. Do NOT force them into bul
 
 Experience section to rewrite:
 {exp_block[:3000]}"""
-        model = "claude-sonnet-4-5-20251001"
+        model = "claude-sonnet-4-5"
         max_tok = 2800
     else:
         prompt = f"""You are an expert resume coach. Rewrite the experience bullets to be optimized for this job.
@@ -486,9 +568,9 @@ Experience section:
         parts.append(rest_block.strip())
     full_resume = "\n\n".join(parts)
 
-    # Attach coach questions as a special attribute for callers that need them
-    # (standard string return preserved for backward compat; deep callers use optimize_resume_deep_sync)
-    full_resume._coach_questions = coach_questions  # type: ignore[attr-defined]
+    # deep_optimize callers need coach_questions alongside the text — return a dict
+    if deep_optimize:
+        return {"resume": full_resume, "coach_questions": coach_questions}
     return full_resume
 
 
@@ -761,13 +843,15 @@ def optimize_resume_deep_sync(resume_raw: str, jd_text: str, ats_gap: dict,
     source_text = "\n\n".join(source_parts)
 
     # ── Rewrite experience section (earned-secret first, no keyword stuffing) ───
-    result_text = generate_ats_resume_sync(
+    deep_result = generate_ats_resume_sync(
         source_text, jd_text, ats_gap, deep_optimize=True, story_context=story_context
     )
-    coach_questions: list[str] = getattr(result_text, "_coach_questions", [])
+    # deep_optimize=True returns {"resume": str, "coach_questions": list}
+    result_text: str = deep_result["resume"]
+    coach_questions: list[str] = deep_result.get("coach_questions", [])
 
     # ── Parse the result back into sections so we can update Skills separately ──
-    rewritten_header, rewritten_exp, rewritten_rest = _split_resume_sections(str(result_text))
+    rewritten_header, rewritten_exp, rewritten_rest = _split_resume_sections(result_text)
 
     # ── Inject missing keywords into Skills section (framework Part 5) ───────────
     missing_keywords = ats_gap.get("missing", [])
@@ -901,7 +985,8 @@ def write_why_company_sync(culture_dna: dict, culture_signals: dict,
     prompt = f"""Write a genuine, specific "why this company/role" answer for a job application.
 Use the candidate's actual culture values and real signals found in the JD.
 2-3 sentences. Sound like a real thoughtful person, not a template. Be specific, not generic.
-Do not use phrases like "I am excited to" or "I would love to".
+Do not use: "I am excited to", "I would love to", "I am passionate about", "obsessing", "obsession",
+"perfected", "thrilled", "honored", "humbled", "transformative", "impactful", "journey".
 
 Candidate culture summary: {summary}
 
@@ -922,23 +1007,48 @@ JD context:
 # ── Value proposition ──────────────────────────────────────────────────────────
 
 def write_value_prop_sync(resume_summary: str, story_matches: list[dict],
-                           job_title: str, company: str, jd_text: str) -> str:
-    """Write a value proposition / cover letter opening paragraph."""
+                           job_title: str, company: str, jd_text: str,
+                           user_why: str = "") -> str:
+    """Write a human cover letter opening grounded in real achievements."""
     client = _get_claude()
     top_bullets = "\n".join(f"- {s['bullet']}" for s in story_matches[:4])
-    prompt = f"""Write a concise, punchy value proposition (cover letter opening) for this candidate.
+    why_block = f"""
+The candidate shared why they genuinely care about this role:
+\"\"\"{user_why.strip()}\"\"\"
+Use this to make the closing sentence more specific and authentic.
+""" if user_why.strip() else ""
+    _name = _candidate_name()
+    prompt = f"""You are {_name} writing a cover letter opening paragraph for a specific job.
+Write in first person. Sound like a real person talking to another person, not a corporate document.
 
-Show specifically what they bring to THIS role — not generic strengths.
-3-4 sentences. Lead with the most impressive achievement. Metric-driven. Confident but not arrogant.
+VOICE RULES — all required:
+- Use contractions (I've, I'm, it's, that's, didn't, wasn't)
+- Start with a specific story or result, not "I am excited" or "I am writing to apply"
+- No filler phrases: "passionate about", "proven track record", "leverage my expertise", "I would love to"
+- No em dashes. Short sentences are fine. Mix sentence lengths.
+- Maximum 3-4 sentences. Every sentence must earn its place.
+- Write like you're telling a colleague what you're good at — specific, direct, honest.
 
-Candidate background: {resume_summary}
+BANNED WORDS — never use these, they sound like AI:
+obsessing, obsession, obsess, perfected, perfect match, this obsession, deeply passionate,
+thrilled, excited to, honored to, humbled, synergy, impactful, journey, transformative
 
-Key achievements relevant to this role:
+WHAT TO WRITE:
+1. Open with the single most relevant achievement (number + mechanism, not just result)
+2. Connect it to what this role actually needs
+3. One sentence on what makes you different — something surprising or counter-intuitive
+{why_block}
+Candidate background:
+{resume_summary}
+
+Specific achievements for this role:
 {top_bullets}
 
-Target role: {job_title} at {company}
-Key requirements:
-{jd_text[:1000]}"""
+Target: {job_title} at {company}
+What the role needs:
+{jd_text[:800]}
+
+Output only the paragraph — no subject line, no greeting, no sign-off."""
     msg = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=320,
