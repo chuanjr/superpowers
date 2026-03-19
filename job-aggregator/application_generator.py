@@ -276,11 +276,37 @@ Resume:
 
 # ── ATS-optimized resume ───────────────────────────────────────────────────────
 
-def generate_ats_resume_sync(resume_raw: str, jd_text: str, ats_gap: dict) -> str:
-    """Rewrite resume bullets using the interview-coach-skill methodology + ATS keyword embedding."""
+def generate_ats_resume_sync(resume_raw: str, jd_text: str, ats_gap: dict,
+                              deep_optimize: bool = False) -> str:
+    """Rewrite resume bullets using the interview-coach-skill methodology + ATS keyword embedding.
+
+    When deep_optimize=True, applies the full Resume Optimization Skill methodology
+    with earned-secret framing and mechanism-first storytelling.
+    """
     missing = ats_gap.get("missing", [])
     client = _get_claude()
     missing_str = ", ".join(missing) if missing else "(none — focus on quality uplift only)"
+
+    earned_secret_block = ""
+    if deep_optimize:
+        earned_secret_block = """
+RESUME OPTIMIZATION SKILL — EARNED SECRET METHODOLOGY:
+Apply these insight-driven coaching principles on top of the 5 dimensions:
+a) Mechanism-first storytelling: every bullet must prove BOTH the metric AND the
+   mechanism that caused it (e.g. "grew DAU 6x by diagnosing creative fatigue and
+   repurposing organic content to cut paid budget 66%" — not just "grew DAU 6x").
+b) Behavioral mechanic > spend: if the resume references growth levers, show that
+   the right mechanic (onboarding nudge, contribution prompt, retention fix) outperformed
+   pure budget/headcount spend.
+c) Personal switching costs: when describing engagement or retention work, frame
+   achievements around personal milestone visibility or identity-at-stake moments
+   rather than generic social/team challenges.
+d) Day-N retention and funnel conversion are high-signal metrics — lead with them
+   when present, even if the original bullet led with a lagging indicator.
+e) Embed ATS keywords at the mechanism or outcome level — never tack them on as
+   adjectives or standalone terms.
+"""
+
     prompt = f"""You are an expert resume coach using the interview-coach-skill methodology.
 Rewrite this resume's experience bullets so they are optimized for THIS specific job.
 
@@ -290,7 +316,7 @@ COACHING DIMENSIONS — maximise all 5 for each bullet:
 3. Relevance: directly address THIS job's key requirements
 4. Credibility: real, provable claims (numbers, scale, scope)
 5. Differentiation: only THIS candidate could say this (earned insight or unique context)
-
+{earned_secret_block}
 ATS KEYWORDS TO EMBED (incorporate naturally): {missing_str}
 
 Rules:

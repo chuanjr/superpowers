@@ -671,90 +671,231 @@ async def generate_package_endpoint(job_id: str, background_tasks: BackgroundTas
     return JSONResponse({"status": "started"})
 
 
+@app.post("/api/pipeline/{job_id}/optimize-resume")
+async def optimize_resume_endpoint(job_id: str) -> JSONResponse:
+    """Deep-optimize ATS resume using earned-secret methodology, then re-check ATS score."""
+    import json as _json
+    resume = get_latest_resume()
+    if not resume:
+        raise HTTPException(404, "No resume found")
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    from store import get_application_package, upsert_application_package
+    from application_generator import generate_ats_resume_sync, check_ats_sync
+
+    pkg = get_application_package(job_id, resume["id"])
+    if not pkg:
+        raise HTTPException(400, "Generate the full package first")
+
+    # Use existing ats_resume as base if present, else raw resume
+    base_text = pkg.get("ats_resume") or resume.get("raw_text", "")
+    ats_gap_raw = pkg.get("ats_gap") or {}
+    if isinstance(ats_gap_raw, str):
+        try:
+            ats_gap_raw = _json.loads(ats_gap_raw)
+        except Exception:
+            ats_gap_raw = {}
+
+    jd_text = job.get("description") or ""
+    if not jd_text:
+        jd_text = await _ensure_job_description(job_id, job)
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+    new_resume = await loop.run_in_executor(
+        None, lambda: generate_ats_resume_sync(base_text, jd_text, ats_gap_raw, deep_optimize=True)
+    )
+    new_gap = await loop.run_in_executor(
+        None, lambda: check_ats_sync(new_resume, jd_text)
+    )
+
+    upsert_application_package(job_id, resume["id"],
+                               ats_resume=new_resume,
+                               ats_gap=_json.dumps(new_gap))
+    return JSONResponse({"ats_resume": new_resume, "ats_gap": new_gap})
+
+
+@app.post("/api/pipeline/{job_id}/recheck-ats")
+async def recheck_ats_endpoint(job_id: str, body: dict) -> JSONResponse:
+    """Re-run ATS keyword check on edited resume text and save the new score."""
+    import json as _json
+    resume = get_latest_resume()
+    if not resume:
+        raise HTTPException(404, "No resume found")
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    from store import upsert_application_package
+    from application_generator import check_ats_sync
+
+    ats_resume = (body.get("ats_resume") or "").strip()
+    if not ats_resume:
+        raise HTTPException(400, "ats_resume is required")
+
+    jd_text = job.get("description") or ""
+    if not jd_text:
+        jd_text = await _ensure_job_description(job_id, job)
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+    new_gap = await loop.run_in_executor(None, lambda: check_ats_sync(ats_resume, jd_text))
+    upsert_application_package(job_id, resume["id"],
+                               ats_resume=ats_resume,
+                               ats_gap=_json.dumps(new_gap))
+    return JSONResponse({"ats_gap": new_gap})
+
+
+@app.post("/api/pipeline/{job_id}/regen-cover-letter")
+async def regen_cover_letter_endpoint(job_id: str) -> JSONResponse:
+    """Regenerate value proposition from latest ATS resume content."""
+    import json as _json
+    resume = get_latest_resume()
+    if not resume:
+        raise HTTPException(404, "No resume found")
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    from store import get_application_package, upsert_application_package, get_all_culture
+    from application_generator import write_value_prop_sync
+
+    pkg = get_application_package(job_id, resume["id"])
+    if not pkg:
+        raise HTTPException(400, "Generate the full package first")
+
+    base_text = pkg.get("ats_resume") or resume.get("raw_text", "")
+    jd_text = job.get("description") or ""
+    if not jd_text:
+        jd_text = await _ensure_job_description(job_id, job)
+
+    # Get story matches from existing package for context
+    story_matches_raw = pkg.get("story_matches") or "[]"
+    if isinstance(story_matches_raw, str):
+        try:
+            story_matches = _json.loads(story_matches_raw)
+        except Exception:
+            story_matches = []
+    else:
+        story_matches = story_matches_raw or []
+
+    parsed = _json.loads(resume.get("parsed_json") or "{}")
+    resume_summary = parsed.get("summary") or ""
+
+    import asyncio
+    loop = asyncio.get_event_loop()
+    new_value_prop = await loop.run_in_executor(
+        None,
+        lambda: write_value_prop_sync(
+            resume_summary, story_matches,
+            job.get("title", ""), job.get("company", ""), jd_text,
+        )
+    )
+    upsert_application_package(job_id, resume["id"], value_prop=new_value_prop)
+    return JSONResponse({"value_prop": new_value_prop})
+
+
 @app.post("/api/pipeline/{job_id}/resume-pdf")
 async def download_resume_pdf(job_id: str, body: dict) -> Response:
     """Convert ATS-optimized resume text to a styled PDF and return for download."""
     import io, re as _re
-    from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
     from reportlab.lib.units import cm
     from reportlab.lib import colors
     from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer
-    from reportlab.pdfbase import pdfmetrics
-    from reportlab.pdfbase.ttfonts import TTFont
 
     import html as _html_mod
+    from reportlab.platypus import HRFlowable, KeepTogether
+    from reportlab.lib.pagesizes import letter
+
     content = (body.get("content") or "").strip()
     if not content:
         raise HTTPException(400, "content is required")
 
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buf, pagesize=A4,
-        leftMargin=2*cm, rightMargin=2*cm,
-        topMargin=2*cm, bottomMargin=2*cm,
-    )
+    def _build_story(body_pt: float, bullet_pt: float):
+        """Build the reportlab story at the given font sizes."""
+        styles = getSampleStyleSheet()
+        name_style = ParagraphStyle(
+            "Name", parent=styles["Normal"],
+            fontName="Helvetica-Bold", fontSize=16,
+            spaceAfter=2, leading=20,
+        )
+        section_style = ParagraphStyle(
+            "Section", parent=styles["Normal"],
+            fontName="Helvetica-Bold", fontSize=body_pt,
+            spaceBefore=8, spaceAfter=2,
+            textColor=colors.HexColor("#1a1a1a"),
+        )
+        body_s = ParagraphStyle(
+            "Body", parent=styles["Normal"],
+            fontName="Helvetica", fontSize=body_pt,
+            spaceAfter=1, leading=body_pt * 1.25,
+        )
+        bullet_s = ParagraphStyle(
+            "Bullet", parent=styles["Normal"],
+            fontName="Helvetica", fontSize=bullet_pt,
+            spaceAfter=1, leading=bullet_pt * 1.25,
+            leftIndent=12, bulletIndent=2,
+        )
 
-    styles = getSampleStyleSheet()
-    name_style = ParagraphStyle(
-        "Name", parent=styles["Normal"],
-        fontName="Helvetica-Bold", fontSize=18,
-        spaceAfter=4,
-    )
-    section_style = ParagraphStyle(
-        "Section", parent=styles["Normal"],
-        fontName="Helvetica-Bold", fontSize=11,
-        spaceBefore=12, spaceAfter=3,
-        textColor=colors.HexColor("#1a1a1a"),
-        borderPad=0, borderWidth=0,
-        underlineWidth=0.5, underlineColor=colors.HexColor("#999999"),
-    )
-    body_style = ParagraphStyle(
-        "Body", parent=styles["Normal"],
-        fontName="Helvetica", fontSize=10,
-        spaceAfter=2, leading=14,
-    )
-    bullet_style = ParagraphStyle(
-        "Bullet", parent=styles["Normal"],
-        fontName="Helvetica", fontSize=10,
-        spaceAfter=2, leading=14,
-        leftIndent=14, bulletIndent=4,
-    )
+        story: list = []
+        lines = content.split("\n")
+        first_line = True
+        section_block: list = []
 
-    story_elements = []
-    lines = content.split("\n")
-    first_line = True
+        def flush_section():
+            if section_block:
+                story.append(KeepTogether(list(section_block)))
+                section_block.clear()
 
-    for line in lines:
-        stripped = line.strip()
-        if not stripped:
-            story_elements.append(Spacer(1, 4))
-            continue
+        for line in lines:
+            stripped = line.strip()
+            if not stripped:
+                if section_block:
+                    section_block.append(Spacer(1, 2))
+                continue
 
-        if first_line:
-            # First non-blank line = candidate name
-            story_elements.append(Paragraph(_html_mod.escape(stripped), name_style))
-            story_elements.append(Spacer(1, 2))
-            first_line = False
-            continue
+            if first_line:
+                story.append(Paragraph(_html_mod.escape(stripped), name_style))
+                story.append(HRFlowable(width="100%", thickness=0.5,
+                                        color=colors.HexColor("#cccccc"), spaceAfter=4))
+                first_line = False
+                continue
 
-        if stripped.startswith("## "):
-            section_title = stripped[3:].strip()
-            story_elements.append(Paragraph(_html_mod.escape(section_title).upper(), section_style))
-        elif stripped.startswith("# "):
-            section_title = stripped[2:].strip()
-            story_elements.append(Paragraph(_html_mod.escape(section_title).upper(), section_style))
-        elif stripped.startswith("- ") or stripped.startswith("• "):
-            bullet_text = stripped[2:].strip()
-            story_elements.append(Paragraph(f"• {_html_mod.escape(bullet_text)}", bullet_style))
-        else:
-            story_elements.append(Paragraph(_html_mod.escape(stripped), body_style))
+            if stripped.startswith("## ") or stripped.startswith("# "):
+                flush_section()
+                title = stripped.lstrip("#").strip()
+                section_block.append(Paragraph(_html_mod.escape(title).upper(), section_style))
+                section_block.append(HRFlowable(width="100%", thickness=0.3,
+                                                 color=colors.HexColor("#e0e0e0"), spaceAfter=2))
+            elif stripped.startswith("- ") or stripped.startswith("• "):
+                bullet_text = stripped[2:].strip()
+                section_block.append(Paragraph(f"• {_html_mod.escape(bullet_text)}", bullet_s))
+            else:
+                section_block.append(Paragraph(_html_mod.escape(stripped), body_s))
 
-    try:
-        doc.build(story_elements)
-    except Exception as exc:
-        raise HTTPException(500, f"PDF generation error: {exc}")
-    pdf_bytes = buf.getvalue()
+        flush_section()
+        return story
+
+    # Try at body=10pt first; if > 1 page, shrink to 8.5pt
+    for body_pt, bullet_pt in [(10.0, 9.5), (8.5, 8.0)]:
+        buf = io.BytesIO()
+        margin = 0.5 * cm * (72 / 2.54)  # 0.5" in points
+        doc = SimpleDocTemplate(
+            buf, pagesize=letter,
+            leftMargin=36, rightMargin=36,
+            topMargin=36, bottomMargin=36,
+        )
+        story_elements = _build_story(body_pt, bullet_pt)
+        try:
+            doc.build(story_elements)
+        except Exception as exc:
+            raise HTTPException(500, f"PDF generation error: {exc}")
+        # Check page count via simple heuristic: if the pdf has page markers, stay
+        pdf_bytes = buf.getvalue()
+        # Count /Page objects to determine page count
+        page_count = pdf_bytes.count(b"/Type /Page\n") + pdf_bytes.count(b"/Type/Page\n")
+        if page_count <= 1:
+            break  # fits on 1 page
 
     safe_id = _re.sub(r"[^a-z0-9]", "-", job_id.lower())[:40]
     return Response(
@@ -1019,6 +1160,17 @@ def _build_culture_dna_from_rows(culture_rows: list) -> dict | None:
             except Exception:
                 pass
     return merged
+
+
+@app.get("/api/jobs/count")
+def jobs_count() -> JSONResponse:
+    return JSONResponse({"count": len(get_all_jobs())})
+
+
+@app.get("/api/review/count")
+def review_count() -> JSONResponse:
+    from store import get_triage
+    return JSONResponse({"count": len(get_triage())})
 
 
 @app.get("/api/review")

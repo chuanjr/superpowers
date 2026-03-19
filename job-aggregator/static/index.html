@@ -483,9 +483,8 @@
   <div id="stats-bar">loading…</div>
   <button id="btn-import" title="Add a job by URL">+ Import URL</button>
   <button id="btn-refresh" title="Re-fetch all job sources">⟳ Refresh</button>
-  <a href="/review" class="header-nav-link">👀 Review</a>
+  <a href="/review" class="header-nav-link">🔍 Analysis <span id="review-count" style="background:#4f8ef7;color:#fff;border-radius:10px;font-size:0.7rem;padding:1px 6px;margin-left:4px;display:none"></span></a>
   <a href="/pipeline" id="pipeline-nav">Pipeline <span id="pipeline-count"></span></a>
-  <a href="/coach" class="header-nav-link">💬 Coach</a>
   <a href="/setup" class="header-nav-link">⚙ Setup</a>
 </header>
 
@@ -642,6 +641,17 @@
       const data = await res.json();
       PIPELINE_IDS = new Set(data.ids || []);
       document.getElementById('pipeline-count').textContent = PIPELINE_IDS.size || '';
+    } catch (e) {}
+  }
+
+  async function loadReviewCount() {
+    try {
+      const res = await fetch('/api/review/count');
+      if (!res.ok) return;
+      const { count } = await res.json();
+      const badge = document.getElementById('review-count');
+      if (count > 0) { badge.textContent = count; badge.style.display = 'inline'; }
+      else badge.style.display = 'none';
     } catch (e) {}
   }
 
@@ -1376,6 +1386,7 @@
   // ── Boot ──────────────────────────────────────────────────
   loadJobs();
   loadPipelineIds();
+  loadReviewCount();
   checkPreviousResume();
 </script>
 

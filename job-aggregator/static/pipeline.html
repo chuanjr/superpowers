@@ -471,14 +471,13 @@
 <body>
 
 <div style="position:absolute;top:16px;left:48px;display:flex;align-items:center;gap:16px">
-  <a href="/jobs" class="back-link">← Job Board</a>
-  <a href="/review" class="back-link">👀 Review Queue</a>
+  <a href="/review" class="back-link">← Analysis</a>
 </div>
 
 <div class="page-header">
   <div>
     <h1 id="header-name">Pipeline</h1>
-    <div class="subtitle" id="header-subtitle">Job Search Tracker</div>
+    <div class="subtitle" id="header-subtitle">Scout → Analysis → Approved → Application → Interview</div>
   </div>
   <div style="display:flex;align-items:center;gap:16px">
     <div class="updated" id="header-updated"></div>
@@ -488,26 +487,30 @@
   </div>
 </div>
 
-<div class="stats-row">
-  <div class="stat-card">
-    <div class="label">Total Reviewed</div>
-    <div class="value" id="stat-total">—</div>
+<div class="stats-row" style="align-items:center">
+  <div class="stat-card" style="flex:1">
+    <div class="label">Scout</div>
+    <a href="/jobs" class="value" id="stat-scout" style="text-decoration:none;color:inherit">—</a>
   </div>
-  <div class="stat-card">
-    <div class="label">Recommended</div>
-    <div class="value" id="stat-recommended">—</div>
+  <div style="font-size:1.2rem;color:#d1d5db;flex:0 0 auto">→</div>
+  <div class="stat-card" style="flex:1">
+    <div class="label">Analysis</div>
+    <a href="/review" class="value" id="stat-analysis" style="text-decoration:none;color:inherit">—</a>
   </div>
-  <div class="stat-card">
-    <div class="label">Applied</div>
-    <div class="value blue" id="stat-applied">—</div>
+  <div style="font-size:1.2rem;color:#d1d5db;flex:0 0 auto">→</div>
+  <div class="stat-card" style="flex:1">
+    <div class="label">Approved</div>
+    <div class="value" id="stat-approved">—</div>
   </div>
-  <div class="stat-card">
-    <div class="label">Interviewing</div>
-    <div class="value amber" id="stat-interviewing">—</div>
+  <div style="font-size:1.2rem;color:#d1d5db;flex:0 0 auto">→</div>
+  <div class="stat-card" style="flex:1">
+    <div class="label">Application</div>
+    <a href="/pipeline?filter=applied" class="value blue" id="stat-applied" style="text-decoration:none">—</a>
   </div>
-  <div class="stat-card">
-    <div class="label">Avg Fit Score</div>
-    <div class="value black" id="stat-avg">—</div>
+  <div style="font-size:1.2rem;color:#d1d5db;flex:0 0 auto">→</div>
+  <div class="stat-card" style="flex:1">
+    <div class="label">Interview</div>
+    <a href="/pipeline?filter=interviewing" class="value amber" id="stat-interviewing" style="text-decoration:none">—</a>
   </div>
 </div>
 
@@ -693,19 +696,24 @@
 
   // ── Stats ─────────────────────────────────────────────────
 
-  function updateStats() {
-    const total = ALL_ENTRIES.length;
-    const recommended   = ALL_ENTRIES.filter(e => e.status === 'recommended').length;
-    const applied       = ALL_ENTRIES.filter(e => e.status === 'applied').length;
-    const interviewing  = ALL_ENTRIES.filter(e => e.status === 'interviewing').length;
-    const scores = ALL_ENTRIES.map(e => e.score).filter(s => s != null);
-    const avg = scores.length ? Math.round(scores.reduce((a, b) => a + b, 0) / scores.length) : null;
+  async function updateStats() {
+    const approved     = ALL_ENTRIES.filter(e => e.status === 'recommended').length;
+    const applied      = ALL_ENTRIES.filter(e => e.status === 'applied').length;
+    const interviewing = ALL_ENTRIES.filter(e => e.status === 'interviewing').length;
 
-    document.getElementById('stat-total').textContent        = total;
-    document.getElementById('stat-recommended').textContent  = recommended;
+    document.getElementById('stat-approved').textContent     = approved;
     document.getElementById('stat-applied').textContent      = applied;
     document.getElementById('stat-interviewing').textContent = interviewing;
-    document.getElementById('stat-avg').textContent          = avg != null ? avg + '%' : '—';
+
+    // Fetch Scout (total jobs) and Analysis (triage count) from server
+    try {
+      const [scoutRes, analysisRes] = await Promise.all([
+        fetch('/api/jobs/count'),
+        fetch('/api/review/count'),
+      ]);
+      if (scoutRes.ok)    document.getElementById('stat-scout').textContent    = (await scoutRes.json()).count;
+      if (analysisRes.ok) document.getElementById('stat-analysis').textContent = (await analysisRes.json()).count;
+    } catch (e) { /* ignore */ }
   }
 
   function getFiltered() {
@@ -783,9 +791,11 @@
   <td><span class="badge-verdict ${verdictCls}">${verdictLabel}</span></td>
   <td>
     <select class="status-sel" data-job-id="${escHtml(e.job_id)}">
-      <option value="recommended"  ${e.status === 'recommended'  ? 'selected' : ''}>Recommended</option>
+      <option value="recommended"  ${e.status === 'recommended'  ? 'selected' : ''}>Approved</option>
       <option value="applied"      ${e.status === 'applied'      ? 'selected' : ''}>Applied</option>
       <option value="interviewing" ${e.status === 'interviewing' ? 'selected' : ''}>Interviewing</option>
+      <option value="offer"        ${e.status === 'offer'        ? 'selected' : ''}>🎉 Offer</option>
+      <option value="rejected"     ${e.status === 'rejected'     ? 'selected' : ''}>❌ Rejected</option>
       <option value="pass"         ${e.status === 'pass'         ? 'selected' : ''}>Pass</option>
     </select>
   </td>
@@ -1050,10 +1060,19 @@
     }
 
     if (data.ats_resume) {
+      const atsScore = data.ats_gap?.score ?? 100;
+      const optimizeBtn = atsScore < 80
+        ? `<button id="pkg-optimize-btn" style="margin-bottom:8px;background:#7c3aed;color:#fff;border:none;padding:5px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem">✨ Optimize Resume (score ${atsScore}%)</button><br>`
+        : '';
       html += section('📄 ATS-Optimized Resume', `
-        <div style="font-size:0.78rem;color:#6b7280;margin-bottom:8px">Edit below, then download as PDF.</div>
+        ${optimizeBtn}
+        <div style="font-size:0.78rem;color:#6b7280;margin-bottom:8px">Edit below, then save to re-check ATS score, or download as PDF.</div>
         <textarea class="pkg-textarea" id="pkg-ats-resume" rows="18" style="font-family:monospace;font-size:0.82rem">${escHtml(data.ats_resume)}</textarea>
-        <button class="copy-btn" id="pkg-resume-pdf-btn" style="margin-top:6px;background:#1d4ed8;color:#fff;border-color:#1d4ed8;padding:5px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem">⬇ Download PDF</button>`);
+        <div style="display:flex;gap:8px;margin-top:6px;align-items:center;flex-wrap:wrap">
+          <button class="copy-btn" id="pkg-resume-save-btn" style="padding:5px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem">💾 Save + Re-check ATS</button>
+          <button class="copy-btn" id="pkg-resume-pdf-btn" style="background:#1d4ed8;color:#fff;border-color:#1d4ed8;padding:5px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem">⬇ Download PDF</button>
+          <span id="pkg-ats-recheck-status" style="font-size:0.78rem;color:#6b7280"></span>
+        </div>`);
     }
 
     if (data.why_company) {
@@ -1065,7 +1084,11 @@
     if (data.value_prop) {
       html += section('Value Prop / Cover Letter', `
         <textarea class="pkg-textarea" id="pkg-value-prop">${escHtml(data.value_prop)}</textarea>
-        <button class="copy-btn" onclick="copyField('pkg-value-prop', this)">⎘ Copy</button>`);
+        <div style="display:flex;gap:8px;margin-top:6px;align-items:center">
+          <button class="copy-btn" onclick="copyField('pkg-value-prop', this)">⎘ Copy</button>
+          <button class="copy-btn" id="pkg-regen-cover-btn" style="padding:5px 14px;border-radius:6px;cursor:pointer;font-size:0.82rem">↺ Regenerate from ATS Resume</button>
+          <span id="pkg-regen-status" style="font-size:0.78rem;color:#6b7280"></span>
+        </div>`);
     }
 
     body.innerHTML = html || '<div class="pkg-status-msg">Package generated — no content available.</div>';
@@ -1123,8 +1146,73 @@
     window.location.href = `/api/pipeline/${encodeURIComponent(_pkgJobId)}/package.txt`;
   });
 
-  // PDF download (button rendered dynamically inside drawer body)
+  // Dynamic button handlers inside package drawer body
   document.getElementById('pkg-drawer-body').addEventListener('click', async e => {
+
+    // ── Optimize Resume (deep optimize with earned-secret methodology) ──
+    const optBtn = e.target.closest('#pkg-optimize-btn');
+    if (optBtn && _pkgJobId) {
+      optBtn.textContent = '⏳ Optimizing…';
+      optBtn.disabled = true;
+      try {
+        const res = await fetch(`/api/pipeline/${encodeURIComponent(_pkgJobId)}/optimize-resume`, { method: 'POST' });
+        if (!res.ok) { alert('Optimization failed — please try again.'); optBtn.disabled = false; optBtn.textContent = '✨ Optimize Resume'; return; }
+        const data = await res.json();
+        const ta = document.getElementById('pkg-ats-resume');
+        if (ta) ta.value = data.ats_resume || '';
+        const statusEl = document.getElementById('pkg-ats-recheck-status');
+        if (statusEl && data.ats_gap) statusEl.textContent = `✓ New ATS score: ${data.ats_gap.score ?? '?'}%`;
+        optBtn.textContent = `✨ Score: ${data.ats_gap?.score ?? '?'}% — Re-optimize`;
+        optBtn.disabled = false;
+      } catch { optBtn.disabled = false; optBtn.textContent = '✨ Optimize Resume'; }
+      return;
+    }
+
+    // ── Save + Re-check ATS ──
+    const saveBtn = e.target.closest('#pkg-resume-save-btn');
+    if (saveBtn && _pkgJobId) {
+      const ta = document.getElementById('pkg-ats-resume');
+      if (!ta) return;
+      saveBtn.textContent = '⏳ Checking…';
+      saveBtn.disabled = true;
+      const statusEl = document.getElementById('pkg-ats-recheck-status');
+      if (statusEl) statusEl.textContent = '';
+      try {
+        const res = await fetch(`/api/pipeline/${encodeURIComponent(_pkgJobId)}/recheck-ats`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ats_resume: ta.value }),
+        });
+        if (!res.ok) { alert('ATS re-check failed.'); return; }
+        const data = await res.json();
+        if (statusEl && data.ats_gap) statusEl.textContent = `✓ ATS score: ${data.ats_gap.score ?? '?'}%`;
+      } catch { /* ignore */ }
+      saveBtn.textContent = '💾 Save + Re-check ATS';
+      saveBtn.disabled = false;
+      return;
+    }
+
+    // ── Regenerate Cover Letter ──
+    const regenBtn = e.target.closest('#pkg-regen-cover-btn');
+    if (regenBtn && _pkgJobId) {
+      regenBtn.textContent = '⏳ Regenerating…';
+      regenBtn.disabled = true;
+      const statusEl = document.getElementById('pkg-regen-status');
+      if (statusEl) statusEl.textContent = '';
+      try {
+        const res = await fetch(`/api/pipeline/${encodeURIComponent(_pkgJobId)}/regen-cover-letter`, { method: 'POST' });
+        if (!res.ok) { alert('Regeneration failed.'); return; }
+        const data = await res.json();
+        const ta = document.getElementById('pkg-value-prop');
+        if (ta && data.value_prop) ta.value = data.value_prop;
+        if (statusEl) statusEl.textContent = '✓ Regenerated';
+      } catch { /* ignore */ }
+      regenBtn.textContent = '↺ Regenerate from ATS Resume';
+      regenBtn.disabled = false;
+      return;
+    }
+
+    // ── PDF download ──
     const pdfBtn = e.target.closest('#pkg-resume-pdf-btn');
     if (!pdfBtn || !_pkgJobId) return;
     const textarea = document.getElementById('pkg-ats-resume');
@@ -1398,6 +1486,20 @@
       return;
     }
   }, true);  // capture phase so it fires before the existing click handler
+
+  // Handle ?filter= URL param to pre-select a tab
+  (function applyUrlFilter() {
+    const params = new URLSearchParams(window.location.search);
+    const f = params.get('filter');
+    if (f) {
+      const tab = document.querySelector(`.tab[data-filter="${f}"]`);
+      if (tab) {
+        document.querySelectorAll('.tab').forEach(x => x.classList.remove('active'));
+        tab.classList.add('active');
+        FILTER = f;
+      }
+    }
+  })();
 
   load();
 </script>

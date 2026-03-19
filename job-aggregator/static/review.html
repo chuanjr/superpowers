@@ -403,13 +403,12 @@
 
 <div class="page-header">
   <div>
-    <h1>👀 Review Queue</h1>
-    <div class="subtitle" id="queue-subtitle">Your personal headhunter — review before committing to pipeline</div>
+    <h1>🔍 Analysis</h1>
+    <div class="subtitle" id="queue-subtitle">Scout → <strong>Analysis</strong> → Approved → Application → Interview</div>
   </div>
   <div class="header-nav">
-    <a href="/jobs" class="nav-link">Job Board</a>
+    <a href="/jobs" class="nav-link">Scout</a>
     <a href="/pipeline" class="nav-link">Pipeline</a>
-    <a href="/coach" class="nav-link">Coach</a>
     <a href="/setup" class="nav-link">⚙ Setup</a>
     <button class="btn-refresh" id="btn-refresh">
       <span class="refresh-dot" id="refresh-dot"></span>
@@ -580,10 +579,10 @@
     const entries = getFiltered();
     const main = document.getElementById('main-content');
     document.getElementById('queue-count').textContent = `${ALL_ENTRIES.length} job${ALL_ENTRIES.length !== 1 ? 's' : ''} pending`;
-    document.getElementById('queue-subtitle').textContent =
+    document.getElementById('queue-subtitle').innerHTML =
       ALL_ENTRIES.length
-        ? `${ALL_ENTRIES.length} job${ALL_ENTRIES.length !== 1 ? 's' : ''} scored ≥70% — decide before committing`
-        : 'No jobs in review queue. Refresh to check for new matches.';
+        ? `Scout → <strong>Analysis</strong> → Approved → Application → Interview &nbsp;·&nbsp; ${ALL_ENTRIES.length} job${ALL_ENTRIES.length !== 1 ? 's' : ''} pending`
+        : 'Scout → <strong>Analysis</strong> → Approved → Application → Interview';
 
     if (!entries.length && FILTER === 'all') {
       main.innerHTML = `<div class="empty-state">
@@ -676,7 +675,7 @@
     ${briefContent}
     <div class="card-actions">
       <button class="btn-approve" data-job-id="${escHtml(e.job_id)}" onclick="approveJob('${escHtml(e.job_id)}')">
-        ✅ Add to Pipeline
+        ✅ Apply
       </button>
       <button class="btn-pass" data-job-id="${escHtml(e.job_id)}" onclick="openPassModal('${escHtml(e.job_id)}')">
         ⏭ Pass
