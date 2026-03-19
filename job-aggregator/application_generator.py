@@ -515,7 +515,7 @@ These will be added to her Skills section separately. Do NOT force them into bul
 
 Experience section to rewrite:
 {exp_block[:3000]}"""
-        model = "claude-sonnet-4-5"
+        model = "claude-sonnet-4-6"
         max_tok = 2800
     else:
         prompt = f"""You are an expert resume coach. Rewrite the experience bullets to be optimized for this job.
@@ -1083,7 +1083,7 @@ JD context (what this team needs):
 Output only the cover letter body — no subject line, no greeting ("Dear..."), no sign-off ("Sincerely...")."""
 
     msg = client.messages.create(
-        model="claude-sonnet-4-5-20251001",
+        model="claude-sonnet-4-6",
         max_tokens=700,
         messages=[{"role": "user", "content": prompt}],
     )
