@@ -737,6 +737,97 @@ async def _scrape_linkedin_jobs_one(keyword: str, market: str, browser: Browser,
         return results
 
 
+_TEAMBLIND_STEALTH_SCRIPT = """
+    Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+    Object.defineProperty(navigator, 'plugins', {get: () => [1, 2, 3, 4, 5]});
+    window.chrome = {runtime: {}};
+"""
+
+
+def _parse_teamblind_link_text(text: str) -> tuple[str, str, str]:
+    """Parse the inner text of a Teamblind job link into (title, company, location).
+
+    Link text format (one field per line):
+        Senior Product Manager
+        Klaviyo
+        3.3
+        Recruiting on Blind   ← or "3d ago" / date
+        Boston, MA
+    """
+    _SKIP_LINES = {"recruiting on blind", "jobs"}
+    lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
+    # Filter out rating lines (e.g. "3.3", "4.0") and known noise
+    lines = [ln for ln in lines if not re.fullmatch(r"\d+\.\d+", ln) and ln.lower() not in _SKIP_LINES]
+    title = lines[0] if lines else ""
+    company = lines[1] if len(lines) > 1 else ""
+    location = lines[-1] if len(lines) > 2 else ""
+    return title, company, location
+
+
+async def _scrape_teamblind_one(keyword: str, browser: Browser, sem: asyncio.Semaphore) -> list[dict]:
+    """Scrape Teamblind Jobs search (no login). Returns whatever is visible after JS renders."""
+    async with sem:
+        results = []
+        seen_urls: set[str] = set()
+        kw = quote_plus(keyword)
+        url = f"https://www.teamblind.com/jobs?page=1&datePosted=7-Past+Week&searchKeyword={kw}"
+        context = await browser.new_context(
+            user_agent=_UA,
+            viewport={"width": 1280, "height": 900},
+            locale="en-US",
+            extra_http_headers={
+                "Accept-Language": "en-US,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+            },
+        )
+        await context.add_init_script(_TEAMBLIND_STEALTH_SCRIPT)
+        page = await context.new_page()
+        try:
+            await page.goto(url, timeout=45000, wait_until="domcontentloaded")
+            # Give Next.js time to hydrate and render job listings
+            await page.wait_for_timeout(5000)
+
+            # Each job is a link whose inner text contains title, company, location
+            links = await page.query_selector_all("a[href*='/jobs/']")
+            for link in links:
+                try:
+                    href = await link.get_attribute("href") or ""
+                    # Skip non-job-detail hrefs (e.g. /jobs without an ID)
+                    if not re.search(r"/jobs/\d+", href):
+                        continue
+                    full_url = (href if href.startswith("http") else f"https://www.teamblind.com{href}").split("?")[0]
+                    if full_url in seen_urls:
+                        continue
+                    seen_urls.add(full_url)
+                    text = (await link.inner_text()).strip()
+                    title, company, location = _parse_teamblind_link_text(text)
+                    if not title or len(title) < 4 or title.lower() in _UI_SKIP_LOWER:
+                        continue
+                    results.append({
+                        "title": title,
+                        "company": company,
+                        "url": full_url,
+                        "description": "",
+                        "location": location or "United States",
+                        "source": "teamblind",
+                        "market": "us",
+                    })
+                except Exception:
+                    continue
+
+            if not results:
+                print(f"[DEBUG] Teamblind '{keyword}': 0 jobs — JS may not have rendered")
+                await _dump_html(page, f"teamblind_{keyword[:20]}")
+            else:
+                print(f"[DEBUG] Teamblind '{keyword}': {len(results)} jobs")
+
+        except Exception as e:
+            print(f"[WARN] Teamblind '{keyword}': {e}")
+        finally:
+            await context.close()
+        return results
+
+
 async def _scrape_all(sources: dict, titles: list[str], markets: list[str]) -> list[dict]:
     """Run all scrapes concurrently with shared browser instances."""
     async with async_playwright() as p:
@@ -756,11 +847,17 @@ async def _scrape_all(sources: dict, titles: list[str], markets: list[str]) -> l
                     headless=True,
                     args=["--disable-blink-features=AutomationControlled"],
                 )
+            if sources.get("teamblind"):
+                browsers["teamblind"] = await p.chromium.launch(
+                    headless=True,
+                    args=["--disable-blink-features=AutomationControlled"],
+                )
 
             cake_sem = asyncio.Semaphore(_CONCURRENCY)
             yourator_sem = asyncio.Semaphore(_CONCURRENCY)
             sem_104 = asyncio.Semaphore(_CONCURRENCY)
             linkedin_sem = asyncio.Semaphore(2)  # Be gentle with LinkedIn
+            teamblind_sem = asyncio.Semaphore(2)
             tasks = []
 
             yourator_url = sources.get("yourator_url") if isinstance(sources, dict) else None
@@ -780,6 +877,8 @@ async def _scrape_all(sources: dict, titles: list[str], markets: list[str]) -> l
                     li_markets = [m for m in markets if m in _LINKEDIN_LOCATIONS]
                     for market in li_markets:
                         tasks.append(_scrape_linkedin_jobs_one(title, market, browsers["linkedin"], linkedin_sem))
+                if "teamblind" in browsers:
+                    tasks.append(_scrape_teamblind_one(title, browsers["teamblind"], teamblind_sem))
 
             batches = await asyncio.gather(*tasks, return_exceptions=True)
         finally:

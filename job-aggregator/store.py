@@ -179,6 +179,11 @@ def init_db(path: Path = DB_PATH) -> None:
         conn.commit()
     except Exception:
         pass
+    try:
+        conn.execute("ALTER TABLE triage_summaries ADD COLUMN jd_brief TEXT")
+        conn.commit()
+    except Exception:
+        pass
     conn.close()
 
 
@@ -433,7 +438,7 @@ def add_to_pipeline(job_id: str, resume_id: Optional[int] = None,
             VALUES (?, ?, ?, ?, ?)
             ON CONFLICT(job_id) DO UPDATE SET
                 resume_id = COALESCE(excluded.resume_id, resume_id),
-                status    = excluded.status,
+                status    = CASE WHEN pipeline.status = 'triage' THEN excluded.status ELSE pipeline.status END,
                 verdict   = COALESCE(excluded.verdict, verdict)
         """, (job_id, resume_id, status, verdict, now))
         conn.commit()
@@ -727,7 +732,7 @@ def get_triage() -> list[dict]:
             SELECT
                 p.id, p.job_id, p.resume_id, p.status, p.added_at,
                 j.title, j.company, j.location, j.market, j.url, j.logo_url,
-                j.sources, j.description, j.first_seen_at,
+                j.sources, j.description, j.first_seen_at, j.industry,
                 rjm.score, rjm.similarity, rjm.explanation,
                 ts.summary_json, ts.status AS summary_status,
                 ap.culture_score
@@ -770,6 +775,25 @@ def get_triage_summary(job_id: str) -> Optional[dict]:
             "SELECT * FROM triage_summaries WHERE job_id = ?", (job_id,)
         ).fetchone()
     return dict(row) if row else None
+
+
+def upsert_jd_brief(job_id: str, brief: str) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    with _conn() as conn:
+        conn.execute("""
+            INSERT INTO triage_summaries (job_id, resume_id, summary_json, status, created_at, jd_brief)
+            VALUES (?, NULL, NULL, 'pending', ?, ?)
+            ON CONFLICT(job_id) DO UPDATE SET jd_brief = excluded.jd_brief
+        """, (job_id, now, brief))
+        conn.commit()
+
+
+def get_jd_brief(job_id: str) -> Optional[str]:
+    with _conn() as conn:
+        row = conn.execute(
+            "SELECT jd_brief FROM triage_summaries WHERE job_id = ?", (job_id,)
+        ).fetchone()
+    return row["jd_brief"] if row else None
 
 
 # ── Company culture cache ──────────────────────────────────────────────────────

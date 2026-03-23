@@ -1538,18 +1538,44 @@ async def import_stories_from_file(body: dict) -> JSONResponse:
 
 # ── Review queue (triage) endpoints ──────────────────────────────────────────
 
+def _jd_looks_garbage(desc: str) -> bool:
+    """Return True if a cached description looks like raw HTML/script content."""
+    if not desc:
+        return True
+    # JSON-LD markers in the text = script tag content was not stripped
+    if '"@context"' in desc or '"@type"' in desc:
+        return True
+    # Navigation/login page content (job board menu, not actual JD)
+    nav_signals = ["登入", "Log in\n", "Sign in\n", "Register\n", "function getDfd()", "window.lazyloader"]
+    if any(sig in desc[:300] for sig in nav_signals):
+        return True
+    # Very short content
+    if len(desc.split()) < 20 and len(desc) < 150:
+        return True
+    return False
+
+
 async def _ensure_job_description(job_id: str, job: dict) -> str:
-    """Return job description, auto-fetching from URL and saving to DB if empty."""
+    """Return job description, auto-fetching from URL if empty or garbage-looking."""
     desc = job.get("description") or ""
-    if not desc.strip() and job.get("url"):
+    url = job.get("url") or ""
+    # Skip company overview pages — they never contain a job description
+    # cake.me/companies/X = company page; yourator.co/companies/X/jobs/Y = job page
+    import re as _re
+    _is_company_page = (
+        _re.search(r"cake\.me/companies/[^/]+$", url) or  # CakeResume company page (no /jobs/ suffix)
+        "linkedin.com/company/" in url  # LinkedIn company page
+    )
+    url_is_job_page = url and not _is_company_page
+    if (_jd_looks_garbage(desc)) and url_is_job_page:
         try:
             from company_research import fetch_jd_from_url
             from store import update_job_description as _update_jd
             fetched = await asyncio.to_thread(fetch_jd_from_url, job["url"])
             # Require at least 80 words of meaningful content — login-wall pages
             # (LinkedIn, etc.) return boilerplate HTML that is useless for ATS scoring
-            from application_generator import _MIN_JD_WORDS
-            if fetched and len(fetched.split()) >= _MIN_JD_WORDS:
+            # Accept if 80+ space-split tokens (English) OR 150+ chars (Chinese/CJK)
+            if fetched and (len(fetched.split()) >= 80 or len(fetched) >= 150):
                 _update_jd(job_id, fetched)
                 return fetched
         except Exception:
@@ -1896,6 +1922,72 @@ def review_page() -> FileResponse:
 @app.get("/setup")
 def setup_page() -> FileResponse:
     return FileResponse(str(_STATIC / "setup.html"))
+
+
+@app.post("/api/review/{job_id}/jd")
+async def review_set_jd(job_id: str, body: dict) -> JSONResponse:
+    """Save a manually-pasted job description, then invalidate the cached brief."""
+    from store import update_job_description, upsert_jd_brief
+    desc = (body.get("description") or "").strip()
+    if not desc:
+        raise HTTPException(400, "description is required")
+    update_job_description(job_id, desc)
+    upsert_jd_brief(job_id, "")   # invalidate cached brief so it regenerates
+    return JSONResponse({"ok": True})
+
+
+@app.get("/api/review/{job_id}/jd")
+async def review_get_jd(job_id: str) -> JSONResponse:
+    """Return (and auto-fetch if missing) the JD for a triage job."""
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    description = await _ensure_job_description(job_id, job)
+    return JSONResponse({"description": description or ""})
+
+
+@app.get("/api/review/{job_id}/jd-brief")
+async def review_get_jd_brief(job_id: str) -> JSONResponse:
+    """Return a plain-language AI summary of the JD. Generates and caches on first call."""
+    from store import get_jd_brief, upsert_jd_brief
+    cached = get_jd_brief(job_id)
+    if cached:
+        return JSONResponse({"brief": cached})
+
+    job = get_job(job_id)
+    if not job:
+        raise HTTPException(404, "Job not found")
+    description = await _ensure_job_description(job_id, job)
+
+    def _generate_brief(desc: str, title: str, company: str) -> str:
+        import anthropic as _anthropic
+        client = _anthropic.Anthropic()
+        has_real_jd = desc and len(desc.strip()) >= 100
+        jd_section = f"Job Description:\n{desc[:3000]}" if has_real_jd else \
+            "(Job description not available — infer from job title and company context only)"
+        prompt = f"""You are a senior career coach giving a candidate a quick, honest read on a job.
+
+Based on the information below, write 3-5 sentences explaining what this job actually involves day-to-day.
+Cover: what the person works on, who they collaborate with, and what success looks like.
+Be direct and specific — no fluff, no bullet headers, no asking for more info.
+If the JD is missing, make educated inferences from the job title and company.
+NEVER ask the user to provide more information. Just give your best assessment.
+Write in English unless the job description is primarily in Chinese, then write in Chinese.
+
+Job: {title} at {company}
+{jd_section}"""
+        msg = client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=1000,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        return msg.content[0].text.strip()
+
+    brief = await asyncio.to_thread(
+        _generate_brief, description, job.get("title", ""), job.get("company", "")
+    )
+    upsert_jd_brief(job_id, brief)
+    return JSONResponse({"brief": brief})
 
 
 # ── Company culture research endpoints ──────────────────────────────────────────

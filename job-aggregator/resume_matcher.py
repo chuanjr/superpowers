@@ -29,7 +29,7 @@ from store import (
 )
 
 _EMBED_MODEL = "models/gemini-embedding-001"
-_TOP_N_EXPLAIN = 30
+_TOP_N_EXPLAIN = 50
 
 
 def _get_gemini() -> genai.Client:
@@ -55,6 +55,20 @@ def extract_pdf_text(pdf_bytes: bytes) -> str:
 
 # ── Sync helpers (called via asyncio.to_thread) ────────────────────────────────
 
+def _build_resume_context(parsed: dict) -> str:
+    """Build a rich candidate context string for scoring prompts."""
+    parts = [parsed.get("summary", "")]
+    if parsed.get("titles"):
+        parts.append(f"Recent titles: {', '.join(parsed['titles'][:6])}")
+    if parsed.get("skills"):
+        parts.append(f"Key skills: {', '.join(parsed['skills'][:20])}")
+    if parsed.get("years_experience"):
+        parts.append(f"Years of experience: {parsed['years_experience']}")
+    if parsed.get("industries"):
+        parts.append(f"Industries: {', '.join(parsed['industries'])}")
+    return "\n".join(p for p in parts if p)
+
+
 def _parse_resume_sync(raw_text: str) -> dict:
     """Call Claude to extract structured info from résumé text."""
     client = _get_claude()
@@ -70,7 +84,7 @@ def _parse_resume_sync(raw_text: str) -> dict:
 }}
 
 Résumé text:
-{raw_text[:4000]}"""
+{raw_text[:6000]}"""
     msg = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=600,
@@ -103,7 +117,7 @@ def _explain_sync(resume_summary: str, job: dict, candidate_industries: list[str
     client = _get_claude()
     jd = (
         f"{job.get('title', '')} at {job.get('company', '')}\n"
-        f"{(job.get('description') or '')[:800]}"
+        f"{(job.get('description') or '')[:2500]}"
     )
     industries_hint = ""
     if candidate_industries:
@@ -142,7 +156,7 @@ IMPORTANT SCORING RULES:
 - Only score high (70+) if both the role type AND industry match the candidate's background.{industries_hint}{feedback_hint}{pass_hint}
 
 Candidate background:
-{resume_summary[:500]}
+{resume_summary[:1200]}
 
 Job:
 {jd}"""
@@ -225,7 +239,7 @@ async def process_matching(resume_id: int, raw_text: str) -> None:
         from store import get_all_jobs  # local import to avoid circular at module level
         job_map = {j["id"]: j for j in get_all_jobs()}
 
-        summary = parsed.get("summary", raw_text[:300])
+        resume_context = _build_resume_context(parsed)
         candidate_industries = parsed.get("industries", [])
 
         async def _explain_job(sim: float, job_id: str) -> None:
@@ -233,7 +247,7 @@ async def process_matching(resume_id: int, raw_text: str) -> None:
             if not job:
                 return
             score, explanation = await asyncio.to_thread(
-                _explain_sync, summary, job, candidate_industries, None, resume_id
+                _explain_sync, resume_context, job, candidate_industries, None, resume_id
             )
             upsert_match(resume_id, job_id, similarity=sim, score=score, explanation=explanation)
 
@@ -279,9 +293,9 @@ async def process_single_job_match(resume_id: int, job_id: str) -> None:
     upsert_match(resume_id, job_id, similarity=sim)
 
     # Score + explain
-    summary    = parsed.get("summary", "")
+    resume_context = _build_resume_context(parsed)
     industries = parsed.get("industries", [])
-    score, explanation = await asyncio.to_thread(_explain_sync, summary, job, industries)
+    score, explanation = await asyncio.to_thread(_explain_sync, resume_context, job, industries)
     upsert_match(resume_id, job_id, similarity=sim, score=score, explanation=explanation)
 
     # Auto-add to review queue if high score
@@ -304,7 +318,7 @@ async def rescore_with_feedback(resume_id: int, job_id: str,
         raise ValueError(f"Job {job_id} not found")
 
     parsed = json.loads(resume.get("parsed_json") or "{}")
-    summary = parsed.get("summary", "")
+    resume_context = _build_resume_context(parsed)
     industries = parsed.get("industries", [])
 
     direction = "too high" if rating == "down" else "too low" if rating == "up_wrong" else "appropriate"
@@ -313,7 +327,7 @@ async def rescore_with_feedback(resume_id: int, job_id: str,
         feedback_ctx += f" Reason: {reason}"
 
     score, explanation = await asyncio.to_thread(
-        _explain_sync, summary, job, industries, feedback_ctx
+        _explain_sync, resume_context, job, industries, feedback_ctx
     )
 
     # Preserve existing similarity

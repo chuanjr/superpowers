@@ -262,6 +262,54 @@
     margin-bottom: 14px; font-size: 0.84rem; color: #374151;
   }
 
+  /* JD + company inline sections */
+  .brief-section-toggle {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.72rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .06em; color: #9ca3af;
+    cursor: pointer; user-select: none;
+    padding: 8px 0 6px; border-top: 1px solid #f3f4f6; margin-top: 10px;
+    background: none; border-left: none; border-right: none; border-bottom: none; width: 100%;
+    text-align: left;
+  }
+  .brief-section-toggle:hover { color: #6b7280; }
+  .brief-section-toggle .toggle-arrow { transition: transform .15s; }
+  .brief-section-toggle.open .toggle-arrow { transform: rotate(90deg); }
+  .brief-section-body {
+    display: none; padding: 8px 0 4px;
+  }
+  .brief-section-body.open { display: block; }
+  .jd-text {
+    font-size: 0.82rem; line-height: 1.65; color: #374151;
+    white-space: pre-wrap; word-break: break-word;
+    max-height: 320px; overflow-y: auto;
+    border: 1px solid #e5e7eb; border-radius: 8px;
+    padding: 12px 14px; background: #fafafa;
+  }
+  .jd-paste-prompt { font-size: 0.82rem; color: #6b7280; margin-bottom: 8px; }
+  .jd-paste-area {
+    width: 100%; box-sizing: border-box; height: 120px; resize: vertical;
+    border: 1px solid #d1d5db; border-radius: 6px; padding: 8px 10px;
+    font-size: 0.82rem; line-height: 1.5; color: #374151;
+    font-family: inherit;
+  }
+  .jd-paste-area:focus { outline: none; border-color: #6366f1; }
+  .jd-paste-submit {
+    margin-top: 6px; padding: 5px 14px; font-size: 0.8rem;
+    background: #6366f1; color: #fff; border: none; border-radius: 5px; cursor: pointer;
+  }
+  .jd-paste-submit:hover { background: #4f46e5; }
+  .company-snapshot {
+    font-size: 0.84rem; line-height: 1.6; color: #374151;
+    background: #f0f9ff; border-radius: 8px; padding: 10px 14px;
+  }
+  .company-snapshot-loading { color: #9ca3af; font-size: 0.82rem; font-style: italic; }
+  .co-research-btn {
+    background: none; border: 1px solid #d1d5db; border-radius: 4px;
+    padding: 2px 8px; font-size: 0.75rem; color: #6b7280; cursor: pointer;
+  }
+  .co-research-btn:hover { background: #f3f4f6; color: #374151; }
+
   /* Card actions */
   .card-actions {
     padding: 14px 22px 18px;
@@ -440,25 +488,6 @@
   </div>
 </div>
 
-<!-- Company Profile Drawer -->
-<div style="position:fixed;inset:0;background:rgba(0,0,0,.2);z-index:200;display:none" id="co-drawer-overlay">
-  <div style="position:fixed;top:0;right:0;bottom:0;width:400px;background:#fff;box-shadow:-4px 0 24px rgba(0,0,0,.12);display:flex;flex-direction:column;transform:translateX(100%);transition:transform .22s cubic-bezier(.4,0,.2,1);z-index:201" id="co-drawer">
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:20px 24px 16px;border-bottom:1px solid #f3f4f6;flex-shrink:0">
-      <div>
-        <div style="font-size:1rem;font-weight:700">🏢 Company Profile</div>
-        <div style="font-size:0.78rem;color:#6b7280;margin-top:2px" id="co-drawer-meta"></div>
-      </div>
-      <button id="co-drawer-close" style="background:none;border:none;font-size:1.3rem;color:#9ca3af;cursor:pointer;padding:4px;border-radius:4px">×</button>
-    </div>
-    <div style="flex:1;overflow-y:auto;padding:20px 24px" id="co-drawer-body">
-      <div style="font-size:0.85rem;color:#6b7280">Loading…</div>
-    </div>
-    <div style="padding:16px 24px;border-top:1px solid #f3f4f6;display:flex;align-items:center;gap:12px;flex-shrink:0">
-      <button id="co-refresh-btn" style="background:#f9fafb;border:1.5px solid #e5e7eb;border-radius:6px;padding:6px 14px;font-size:0.82rem;cursor:pointer">🔄 Refresh Data</button>
-      <span style="font-size:0.75rem;color:#9ca3af" id="co-fetch-date"></span>
-    </div>
-  </div>
-</div>
 
 <!-- Pass modal -->
 <div class="modal-overlay hidden" id="pass-modal">
@@ -536,12 +565,179 @@
 
   // ── Load ─────────────────────────────────────────────────────
 
+  const _jdCache = {};      // job_id → AI brief text
+  const _coCache = {};      // company key → culture object
+
+  async function preloadJd(jobId, jobTranslation) {
+    if (_jdCache[jobId] !== undefined) { _renderJd(jobId); return; }
+    // Use job_translation from triage brief if already available (no extra API call)
+    if (jobTranslation) {
+      _jdCache[jobId] = jobTranslation;
+      _renderJd(jobId);
+      return;
+    }
+    try {
+      const d = await fetch(`/api/review/${encodeURIComponent(jobId)}/jd-brief`).then(r => r.json());
+      _jdCache[jobId] = d.brief || '';
+    } catch { _jdCache[jobId] = ''; }
+    _renderJd(jobId);
+  }
+
+  function _cleanJdText(raw) {
+    if (!raw) return '';
+    // Decode literal \uXXXX escape sequences (double-encoded JSON-LD)
+    let text = raw.replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+    // Decode other common JSON string escapes
+    text = text.replace(/\\n/g, '\n').replace(/\\t/g, ' ').replace(/\\r/g, '');
+    // If text contains an embedded JSON-LD blob (from script tags not stripped server-side),
+    // extract the "description" field, or strip the JSON tail from meaningful content.
+    if (text.includes('"@context"') || text.includes('"@type"')) {
+      const m = text.match(/"description"\s*:\s*"((?:[^"\\]|\\.)*)"/);
+      if (m) {
+        text = m[1].replace(/\\n/g, '\n').replace(/\\t/g, ' ');
+      } else {
+        // Can't extract description cleanly — find where JSON blob starts and truncate
+        const blobIdx = text.search(/[{,]\s*"@(?:context|type)"/);
+        if (blobIdx > 80) {
+          text = text.slice(0, blobIdx);
+        } else {
+          // JSON blob starts near the top — strip JSON fragments and script leftovers
+          text = text
+            .replace(/\{[^{}]*"@type"[^{}]*\}/g, '')
+            .replace(/window\.\w[\w.]*\s*=.*/g, '')
+            .replace(/\$\(document\).*/g, '');
+        }
+      }
+    } else if (text.trimStart().startsWith('{')) {
+      try {
+        const obj = JSON.parse(text.trim());
+        if (obj.description) text = obj.description;
+      } catch(e) {}
+    }
+    // Preserve structure across block tags, then strip all tags
+    text = text.replace(/<br\s*\/?>/gi, '\n')
+               .replace(/<\/(p|div|li|h[1-6])>/gi, '\n')
+               .replace(/<[^>]+>/g, '')
+               .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&')
+               .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
+               .replace(/&quot;/g, '"').replace(/&#39;/g, "'");
+    text = text.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    // Strip leading page-title lines (e.g. "Job Title - Company | Platform | Tagline")
+    const lines = text.split('\n');
+    let startIdx = 0;
+    for (let i = 0; i < Math.min(4, lines.length); i++) {
+      const ln = lines[i].trim();
+      if (ln.includes('|') && ln.length < 200 && !/[。、：]/u.test(ln)) {
+        startIdx = i + 1;
+      } else {
+        break;
+      }
+    }
+    if (startIdx > 0) text = lines.slice(startIdx).join('\n').trim();
+    return text;
+  }
+
+  function _renderJd(jobId) {
+    const el = document.getElementById(`jd-text-${jobId}`);
+    if (!el) return;
+    const brief = _jdCache[jobId] || '';
+    if (brief) {
+      el.textContent = brief;
+    } else {
+      el.innerHTML = `
+        <p class="jd-paste-prompt">⚠️ Job description unavailable (login required). Paste it here to get an AI summary:</p>
+        <textarea class="jd-paste-area" id="jd-paste-${escHtml(jobId)}" placeholder="Paste job description here…"></textarea>
+        <button class="jd-paste-submit" onclick="submitPastedJd('${escHtml(jobId)}')">✨ Analyse</button>`;
+    }
+  }
+
+  async function submitPastedJd(jobId) {
+    const ta = document.getElementById(`jd-paste-${jobId}`);
+    if (!ta || !ta.value.trim()) return;
+    const btn = ta.nextElementSibling;
+    btn.disabled = true; btn.textContent = 'Saving…';
+    await fetch(`/api/review/${encodeURIComponent(jobId)}/jd`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({description: ta.value.trim()}),
+    });
+    // Invalidate cache and re-fetch brief
+    delete _jdCache[jobId];
+    const el = document.getElementById(`jd-text-${jobId}`);
+    if (el) el.textContent = 'Generating summary…';
+    await preloadJd(jobId);
+  }
+
+  function _coKey(company) {
+    return company.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+  }
+
+  async function preloadCompany(jobId, company) {
+    if (!company) return;
+    const key = _coKey(company);
+    if (_coCache[key] !== undefined) { _renderCompany(jobId, key); return; }
+    try {
+      const d = await fetch(`/api/company/${encodeURIComponent(key)}/culture`).then(r => r.json());
+      _coCache[key] = (d.status === 'done' && d.culture) ? d.culture : null;
+    } catch { _coCache[key] = null; }
+    _renderCompany(jobId, key);
+  }
+
+  function _renderCompany(jobId, key) {
+    const el = document.getElementById(`co-text-${jobId}`);
+    if (!el) return;
+    const company = el.dataset.company || '';
+    const c = _coCache[key];
+    if (!c || typeof c !== 'object') {
+      el.innerHTML = `<span class="company-snapshot-loading">No company profile yet. <button class="co-research-btn" onclick="inlineResearchCompany('${escHtml(jobId)}','${escHtml(company)}')">🔍 Research</button></span>`;
+      return;
+    }
+    let html = '';
+    if (c.summary) html += `<p style="font-size:0.82rem;color:#374151;line-height:1.5;margin-bottom:8px">${escHtml(c.summary)}</p>`;
+    if (c.work_style) html += `<div style="font-size:0.8rem;color:#4b5563;margin-bottom:8px"><strong>Work style:</strong> ${escHtml(c.work_style)}</div>`;
+    if (c.green_flags?.length) html += `<div style="font-size:0.8rem;margin-bottom:6px">${c.green_flags.map(g => `🟢 ${escHtml(g)}`).join('<br>')}</div>`;
+    if (c.red_flags?.length) html += `<div style="font-size:0.8rem;margin-bottom:4px">${c.red_flags.map(r => `🔴 ${escHtml(r)}`).join('<br>')}</div>`;
+    html += `<div style="margin-top:8px"><button class="co-research-btn" onclick="inlineResearchCompany('${escHtml(jobId)}','${escHtml(company)}',true)">↺ Refresh</button></div>`;
+    el.innerHTML = html;
+  }
+
+  async function inlineResearchCompany(jobId, company, force = false) {
+    if (!company) return;
+    const key = _coKey(company);
+    const el = document.getElementById(`co-text-${jobId}`);
+    if (el) el.innerHTML = `<span class="company-snapshot-loading">🔍 Researching ${escHtml(company)}…</span>`;
+
+    await fetch(`/api/company/${encodeURIComponent(key)}/research`, {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({company, force}),
+    });
+
+    // Poll until done
+    for (let i = 0; i < 20; i++) {
+      await new Promise(r => setTimeout(r, 1500));
+      const d = await fetch(`/api/company/${encodeURIComponent(key)}/culture`).then(r => r.json());
+      if (d.status === 'done' && d.culture) {
+        _coCache[key] = d.culture;
+        _renderCompany(jobId, key);
+        return;
+      }
+      if (d.status === 'error') break;
+    }
+    const errEl = document.getElementById(`co-text-${jobId}`);
+    if (errEl) errEl.innerHTML = `<span class="company-snapshot-loading">Could not fetch company data. <button class="co-research-btn" onclick="inlineResearchCompany('${escHtml(jobId)}','${escHtml(company)}')">Retry</button></span>`;
+  }
+
   async function load() {
     const data = await fetch('/api/review').then(r => r.json());
     ALL_ENTRIES = data.entries || [];
     render();
     // Auto-generate briefs for first 10 entries that don't have a complete summary
     ALL_ENTRIES.filter(e => !getSummary(e)?.headline).slice(0, 10).forEach(e => generateBrief(e.job_id));
+    // Pre-load JDs and company profiles for all entries (background, no await)
+    ALL_ENTRIES.forEach(e => {
+      const s = getSummary(e);
+      preloadJd(e.job_id, s?.job_translation);
+      preloadCompany(e.job_id, e.company);
+    });
   }
 
   function getFiltered() {
@@ -575,6 +771,14 @@
     } catch { return null; }
   }
 
+  function _restoreCachedSections() {
+    ALL_ENTRIES.forEach(e => {
+      if (_jdCache[e.job_id] !== undefined) _renderJd(e.job_id);
+      const key = _coKey(e.company || '');
+      if (key && _coCache[key] !== undefined) _renderCompany(e.job_id, key);
+    });
+  }
+
   function render() {
     const entries = getFiltered();
     const main = document.getElementById('main-content');
@@ -605,6 +809,7 @@
     }
 
     main.innerHTML = entries.map(e => buildCard(e)).join('');
+    _restoreCachedSections();
   }
 
   function buildCard(e) {
@@ -632,7 +837,8 @@
         Generating career coach brief…
       </div>` : '';
 
-    const briefContent = summary ? buildBriefContent(summary) : (summaryStatus === 'pending' ? '' : `
+    const industry = summary?.inferred_industry || e.industry || '';
+    const briefContent = summary ? buildBriefContent(summary, e.job_id, e.company, e.location, industry) : (summaryStatus === 'pending' ? '' : `
       <div style="font-size:0.82rem;color:#9ca3af;padding:10px 0 18px">
         No brief yet.
         <button class="btn-gen-brief" data-job-id="${escHtml(e.job_id)}" onclick="generateBrief(this.dataset.jobId)">
@@ -655,8 +861,6 @@
            onclick="event.stopPropagation()" style="color:inherit;text-decoration:none">
           ${escHtml(e.company || '—')}
         </a>
-        <button style="background:none;border:none;cursor:pointer;font-size:0.85rem;padding:0 2px;margin-left:4px;opacity:0.5;vertical-align:middle;transition:opacity .12s" onmouseenter="this.style.opacity=1" onmouseleave="this.style.opacity=0.5"
-          onclick="event.stopPropagation();openCoProfile('${escHtml(e.company || '')}')">🏢</button>
       </div>
       <div class="card-title">${escHtml(e.title || '')}</div>
       <div class="card-meta">
@@ -673,6 +877,7 @@
   <div class="card-brief">
     ${loadingStatus}
     ${briefContent}
+    ${!summary ? buildInlineSections(e.job_id, e.company) : ''}
     <div class="card-actions">
       <button class="btn-approve" data-job-id="${escHtml(e.job_id)}" onclick="approveJob('${escHtml(e.job_id)}')">
         ✅ Apply
@@ -686,7 +891,7 @@
 </div>`;
   }
 
-  function buildBriefContent(s) {
+  function buildBriefContent(s, jobId, company, location, industry) {
     if (s.error) return `<div class="brief-loading" style="color:#ef4444">Error: ${escHtml(s.error)}</div>`;
     const strengthsHtml = (s.strengths || []).map(x =>
       `<div class="brief-item" data-icon="✅">${escHtml(x)}</div>`).join('');
@@ -703,6 +908,7 @@
     return `
     <div class="brief-headline">${escHtml(s.headline || '')}</div>
     <div class="brief-summary">${escHtml(s.fit_summary || '')}</div>
+    ${jobId ? buildInlineSections(jobId, company) : ''}
     <div class="brief-grid">
       ${strengthsHtml ? `<div class="brief-block">
         <div class="brief-block-title">You bring</div>
@@ -715,7 +921,33 @@
         <div class="brief-items">${challengesHtml}</div>` : ''}
       </div>
     </div>
-    ${cultureHtml}`;
+    ${cultureHtml}
+    ${location || industry ? `<div style="font-size:0.78rem;color:#9ca3af;margin-top:8px">${location ? `📍 ${escHtml(location)}` : ''}${location && industry ? ' · ' : ''}${industry ? `🏭 ${escHtml(industry)}` : ''}</div>` : ''}`;
+  }
+
+  function buildInlineSections(jobId, company) {
+    return `
+    <button class="brief-section-toggle open" onclick="toggleSection(this,'jd-${escHtml(jobId)}')">
+      <span class="toggle-arrow">›</span> Job Description
+    </button>
+    <div class="brief-section-body open" id="jd-${escHtml(jobId)}">
+      <div class="jd-text" id="jd-text-${escHtml(jobId)}">Loading…</div>
+    </div>
+    <button class="brief-section-toggle open" onclick="toggleSection(this,'co-${escHtml(jobId)}')">
+      <span class="toggle-arrow">›</span> Company Culture
+    </button>
+    <div class="brief-section-body open" id="co-${escHtml(jobId)}">
+      <div class="company-snapshot" id="co-text-${escHtml(jobId)}" data-company="${escHtml(company || '')}">
+        <span class="company-snapshot-loading">Loading company profile…</span>
+      </div>
+    </div>`;
+  }
+
+  function toggleSection(btn, bodyId) {
+    const body = document.getElementById(bodyId);
+    if (!body) return;
+    const open = body.classList.toggle('open');
+    btn.classList.toggle('open', open);
   }
 
   // ── Card expand/collapse ──────────────────────────────────────
@@ -769,6 +1001,8 @@
           entry.summary_json = JSON.stringify(data.summary);
           entry.summary_status = 'done';
           if (data.summary.culture_score != null) entry.culture_score = data.summary.culture_score;
+          // Seed JD cache from job_translation so the section renders immediately
+          if (data.summary.job_translation) _jdCache[jobId] = data.summary.job_translation;
           // Re-render card
           const oldCard = document.getElementById(`card-${jobId}`);
           if (oldCard) {
@@ -780,6 +1014,7 @@
             if (wasExpanded) newCard.classList.add('expanded');
             oldCard.replaceWith(newCard);
           }
+          _restoreCachedSections();
           resolve();
         } else if (data.status === 'error' || tries >= 40) {
           clearInterval(timer);
@@ -980,103 +1215,6 @@
     if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); sendCoachMessage(); }
   });
 
-  // ── Company Profile Drawer ────────────────────────────────────
-
-  let _coCompany = null;
-  let _coKey = null;
-
-  function _normalizeCoKey(company) {
-    return company.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
-  }
-
-  async function openCoProfile(company) {
-    if (!company) return;
-    _coCompany = company;
-    _coKey = _normalizeCoKey(company);
-    document.getElementById('co-drawer-meta').textContent = company;
-    const overlay = document.getElementById('co-drawer-overlay');
-    const drawer = document.getElementById('co-drawer');
-    overlay.style.display = 'block';
-    setTimeout(() => { drawer.style.transform = 'translateX(0)'; }, 10);
-    await loadCoProfile(false);
-  }
-
-  function closeCoProfile() {
-    document.getElementById('co-drawer').style.transform = 'translateX(100%)';
-    setTimeout(() => { document.getElementById('co-drawer-overlay').style.display = 'none'; }, 220);
-    _coCompany = null; _coKey = null;
-  }
-
-  async function loadCoProfile(force) {
-    const body = document.getElementById('co-drawer-body');
-    const fetchDate = document.getElementById('co-fetch-date');
-    body.innerHTML = `<div style="font-size:0.85rem;color:#6b7280">⏳ Loading…</div>`;
-    fetchDate.textContent = '';
-
-    const poll = async () => {
-      for (let i = 0; i < 20; i++) {
-        await new Promise(r => setTimeout(r, 1500));
-        const r = await fetch(`/api/company/${encodeURIComponent(_coKey)}/culture`).then(r => r.json());
-        if (r.status === 'done') { renderCoProfile(r); return true; }
-        if (r.status === 'error') { break; }
-      }
-      body.innerHTML = `<div style="font-size:0.85rem;color:#dc2626">Could not fetch company data.</div>`;
-      return false;
-    };
-
-    if (force) {
-      await fetch(`/api/company/${encodeURIComponent(_coKey)}/research`, {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({company: _coCompany, force: true}),
-      });
-      await poll();
-      return;
-    }
-
-    const data = await fetch(`/api/company/${encodeURIComponent(_coKey)}/culture`).then(r => r.json());
-    if (data.status === 'none') {
-      body.innerHTML = `<div style="font-size:0.85rem;color:#6b7280">🔍 Searching for company culture data…</div>`;
-      await fetch(`/api/company/${encodeURIComponent(_coKey)}/research`, {
-        method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({company: _coCompany}),
-      });
-      await poll();
-    } else {
-      renderCoProfile(data);
-    }
-  }
-
-  function renderCoProfile(data) {
-    const body = document.getElementById('co-drawer-body');
-    const fetchDate = document.getElementById('co-fetch-date');
-    const c = data.culture || {};
-    if (!c || Object.keys(c).length === 0) {
-      body.innerHTML = `<div style="font-size:0.85rem;color:#6b7280">No culture data found.</div>`;
-      return;
-    }
-    const valuesHtml = (c.values || []).map(v =>
-      `<span style="display:inline-block;background:#fef9c3;border:1px solid #fde68a;border-radius:12px;padding:2px 10px;font-size:0.73rem;margin:2px">${escHtml(v)}</span>`).join('');
-    const greenHtml = (c.green_flags || []).map(g =>
-      `<div style="font-size:0.82rem;color:#166534;margin-bottom:4px">🟢 ${escHtml(g)}</div>`).join('');
-    const redHtml = (c.red_flags || []).map(r =>
-      `<div style="font-size:0.82rem;color:#991b1b;margin-bottom:4px">🔴 ${escHtml(r)}</div>`).join('');
-    body.innerHTML = `
-      ${c.summary ? `<p style="font-size:0.85rem;color:#374151;line-height:1.5;margin-bottom:16px">${escHtml(c.summary)}</p>` : ''}
-      ${c.work_style ? `<div style="font-size:0.82rem;color:#4b5563;margin-bottom:16px"><strong>Work style:</strong> ${escHtml(c.work_style)}</div>` : ''}
-      ${valuesHtml ? `<div style="margin-bottom:16px"><div style="font-size:0.72rem;font-weight:600;color:#9ca3af;margin-bottom:6px;letter-spacing:.05em">VALUES</div><div>${valuesHtml}</div></div>` : ''}
-      ${greenHtml ? `<div style="margin-bottom:12px"><div style="font-size:0.72rem;font-weight:600;color:#9ca3af;margin-bottom:6px;letter-spacing:.05em">GREEN FLAGS</div>${greenHtml}</div>` : ''}
-      ${redHtml ? `<div><div style="font-size:0.72rem;font-weight:600;color:#9ca3af;margin-bottom:6px;letter-spacing:.05em">RED FLAGS</div>${redHtml}</div>` : ''}
-    `;
-    if (data.fetched_at) {
-      fetchDate.textContent = `Fetched ${new Date(data.fetched_at).toLocaleDateString()}`;
-    }
-  }
-
-  document.getElementById('co-drawer-close').addEventListener('click', closeCoProfile);
-  document.getElementById('co-drawer-overlay').addEventListener('click', e => {
-    if (e.target.id === 'co-drawer-overlay') closeCoProfile();
-  });
-  document.getElementById('co-refresh-btn').addEventListener('click', () => loadCoProfile(true));
 
   // ── Init ──────────────────────────────────────────────────────
   load();

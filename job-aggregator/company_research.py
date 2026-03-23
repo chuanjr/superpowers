@@ -165,8 +165,22 @@ def fetch_104_company_info(job_url: str) -> list[str]:
 # ── JD auto-fetch ──────────────────────────────────────────────────────────────
 
 def _strip_html(html: str) -> str:
-    text = re.sub(r"<[^>]+>", " ", html)
-    return re.sub(r"\s+", " ", text).strip()
+    # Remove script and style tag contents entirely (prevents JSON-LD blobs in output)
+    text = re.sub(r"<script[^>]*>.*?</script>", "", html, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    # Decode literal \uXXXX escape sequences (from double-encoded JSON-LD descriptions)
+    text = re.sub(r"\\u([0-9a-fA-F]{4})", lambda m: chr(int(m.group(1), 16)), text)
+    # Decode other common JSON string escapes
+    text = text.replace("\\n", "\n").replace("\\t", " ").replace("\\r", "")
+    # Preserve newlines at block boundaries before stripping tags
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</(p|div|li|h[1-6])>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = text.replace("&nbsp;", " ").replace("&amp;", "&").replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", '"').replace("&#39;", "'")
+    # Collapse whitespace but keep paragraph breaks
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n{3,}", "\n\n", text)
+    return text.strip()
 
 
 def _extract_ld_json_description(html: str) -> str:

@@ -169,7 +169,7 @@ def _check_source_health(
     if rss_enabled and len(rss_raw) == 0:
         print("[WARN] RSS sources enabled but returned 0 jobs — check feed URLs in rss_fetcher.py")
 
-    scraper_enabled = sources.get("cakeresume") or sources.get("yourator") or sources.get("104")
+    scraper_enabled = sources.get("cakeresume") or sources.get("yourator") or sources.get("104") or sources.get("teamblind")
     if scraper_enabled and len(scraper_raw) == 0:
         print("[WARN] Scraper sources enabled but returned 0 jobs — check selectors or run with --debug")
 

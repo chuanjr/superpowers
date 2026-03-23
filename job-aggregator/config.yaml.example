@@ -24,6 +24,7 @@ sources:
   cakeresume: true
   yourator: true
   wellfound: true
+  teamblind: true   # teamblind.com job listings (US-focused)
 
 notification:
   to: "your@email.com"

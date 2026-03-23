@@ -140,13 +140,49 @@ def _extract_company_from_context(html: str, title: str) -> str:
     return ""
 
 
+def _parse_simplify_email(html: str) -> list[dict]:
+    """Parse Simplify.jobs email. Each job is a single <a viewMatch=UUID> card containing:
+    - <img alt="Company logo" src="logo_url">
+    - <p class="hover-underline ...">Job Title</p>
+    """
+    results = []
+    seen_urls: set[str] = set()
+    for m in re.finditer(
+        r'<a\s[^>]*href="(https://simplify\.jobs/matches\?viewMatch=[a-f0-9-]+)[^"]*"[^>]*>(.*?)</a>',
+        html, re.DOTALL | re.IGNORECASE,
+    ):
+        url = m.group(1)
+        if url in seen_urls:
+            continue
+        seen_urls.add(url)
+        card_html = m.group(2)
+
+        logo_m = re.search(r'<img\s[^>]*alt="([^"]+?)\s+logo"[^>]*src="([^"]+)"', card_html, re.IGNORECASE)
+        company = logo_m.group(1).strip() if logo_m else ""
+        logo_url = logo_m.group(2) if logo_m else ""
+
+        title_m = re.search(r'<p[^>]*class="[^"]*hover-underline[^"]*"[^>]*>\s*(.*?)\s*</p>', card_html, re.DOTALL | re.IGNORECASE)
+        if not title_m:
+            continue
+        title = re.sub(r"<[^>]+>", "", title_m.group(1)).strip()
+        if not title or len(title) < 3:
+            continue
+
+        results.append({"title": title, "company": company, "url": url, "logo_url": logo_url})
+    return results
+
+
 def parse_gmail_message(html: str, source: str, market: str, debug: bool = False) -> list[dict]:
     if not html:
         return []
-    extractor = _LinkExtractor()
-    extractor.feed(html)
+    if source == "simplify":
+        raw_jobs = _parse_simplify_email(html)
+    else:
+        extractor = _LinkExtractor()
+        extractor.feed(html)
+        raw_jobs = extractor.jobs
     results = []
-    for job in extractor.jobs:
+    for job in raw_jobs:
         if not job.get("company"):
             job["company"] = _extract_company_from_context(html, job["title"])
         results.append({

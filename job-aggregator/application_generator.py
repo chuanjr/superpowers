@@ -181,6 +181,8 @@ Give an honest, direct assessment. Return ONLY valid JSON:
 {{
   "headline": "<8-12 words: key insight about this fit, e.g. 'Strong technical fit; culture flag on ownership model'>",
   "fit_summary": "<2-3 sentences: overall picture of fit — what aligns and what to watch for>",
+  "job_translation": "<3-5 sentences: explain in plain language what this job actually is — what the person does day-to-day, who they work with, what success looks like. Skip company boilerplate and requirements lists. Write in the same language as the JD (Chinese if Chinese, English if English).>",
+  "inferred_industry": "<1-4 words: the company's industry inferred from the JD or company name, e.g. '社群媒體', 'EdTech', 'FinTech', 'E-commerce', 'AI/ML', 'Gaming'. Match the language of the JD.>",
   "strengths": ["<specific strength 1>", "<specific strength 2>", "<specific strength 3>"],
   "gaps": ["<specific gap 1>", "<specific gap 2>"],
   "key_challenges": ["<realistic challenge in this role for this candidate>"],
@@ -202,7 +204,7 @@ JD:
 
     msg = client.messages.create(
         model="claude-haiku-4-5-20251001",
-        max_tokens=700,
+        max_tokens=900,
         messages=[{"role": "user", "content": prompt}],
     )
     return json.loads(_strip_code_fence(msg.content[0].text))
