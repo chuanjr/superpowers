@@ -132,7 +132,7 @@ def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_ba
         headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
         sender = headers.get("From", "")
         subject = headers.get("Subject", "")
-        source = "linkedin" if "linkedin" in sender else "indeed"
+        source = "simplify" if "simplify.jobs" in sender else ("linkedin" if "linkedin" in sender else "indeed")
         market = _detect_market(sender, subject, markets)
         is_pm_email = "product manager" in subject.lower() or "growth" in subject.lower()
         jobs = parse_gmail_message(html, source=source, market=market, debug=DEBUG and is_pm_email)
@@ -156,7 +156,7 @@ def _check_source_health(
     gmail_raw: list, rss_raw: list, scraper_raw: list,
 ) -> None:
     """Warn when an enabled source returns zero entries."""
-    gmail_enabled = sources.get("linkedin_gmail") or sources.get("indeed_gmail")
+    gmail_enabled = sources.get("linkedin_gmail") or sources.get("indeed_gmail") or sources.get("simplify_gmail")
     if gmail_enabled and len(gmail_raw) == 0:
         print("[WARN] Gmail sources enabled but returned 0 jobs — check OAuth token or alert settings")
 

@@ -356,7 +356,7 @@ def check_ats_sync(resume_raw: str, jd_text: str) -> dict:
         high_freq_missing: list  — keywords appearing 2+ times in JD but not in resume
         safe: bool               — True when score >= 70
     """
-    if len(jd_text.strip()) < 50:
+    if len(jd_text.split()) < 80:
         return {"present": [], "missing": [], "score": None, "no_jd": True,
                 "title_match": None, "required_coverage": None,
                 "high_freq_missing": [], "safe": False}
@@ -395,7 +395,7 @@ JD:
 {jd_text[:2500]}
 
 Resume:
-{resume_raw[:3000]}"""
+{resume_raw[:5000]}"""
     msg = client.messages.create(
         model="claude-haiku-4-5-20251001",
         max_tokens=600,
@@ -623,25 +623,29 @@ def compute_resume_diff(original: str, optimized: str) -> list[dict]:
 def _inject_skills_keywords(rest_block: str, missing_keywords: list[str]) -> str:
     """Add missing JD keywords to the Skills section of rest_block (verbatim sections).
 
-    Per the Resume Judgment Framework: ATS keywords belong in the Skills section,
-    NOT forced into bullets. Skills section keyword weight is comparable for ATS purposes.
-    Only adds keywords that Grace plausibly has (filters fabrication-risky keywords like
-    "Agile/Scrum", "growth hacking", "behavioral science" as a formal methodology).
+    Per the Resume Judgment Framework Part 5:
+    - ATS keywords belong in Skills section ONLY — never in bullets
+    - Reject fabrication-risk keywords (Agile, growth hacking, behavioral science)
+    - Reject buzzwords and keywords requiring experience the candidate doesn't have
+    - Do NOT reorganize the Skills section category structure
 
     Returns updated rest_block.
     """
     if not missing_keywords or not rest_block:
         return rest_block
 
-    # Keywords that should never be added (fabrication risk or outdated/buzzword)
-    _reject_keywords = {
+    # Framework Part 5: keywords that must never be added (fabrication risk / outdated)
+    _reject_patterns = {
         "agile", "scrum", "growth hacking", "behavioral science",
-        "leveraged synergies", "growth hacking",
+        "leveraged synergies", "fast-paced", "cross-functional collaboration",
+        "stakeholder management",  # too generic — strips PM signal
     }
 
     safe_keywords = [
         k for k in missing_keywords
-        if not any(bad in k.lower() for bad in _reject_keywords)
+        if not any(bad in k.lower() for bad in _reject_patterns)
+        # Also skip if already present (case-insensitive) in the rest block
+        and k.lower() not in rest_block.lower()
     ]
     if not safe_keywords:
         return rest_block

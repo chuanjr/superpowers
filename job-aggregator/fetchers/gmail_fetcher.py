@@ -15,6 +15,7 @@ CREDENTIALS_DIR = Path("credentials")
 SENDER_MAP = {
     "linkedin_gmail": "from:(jobalerts-noreply@linkedin.com OR jobs-noreply@linkedin.com)",
     "indeed_gmail": "from:(jobalert@indeed.com OR alert@sg.indeed.com OR alert@jp.indeed.com OR alert@tw.indeed.com)",
+    "simplify_gmail": "from:matches@simplify.jobs subject:\"New matches from\"",
 }
 
 

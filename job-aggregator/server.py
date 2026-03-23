@@ -949,7 +949,7 @@ async def optimize_resume_endpoint(job_id: str, request: Request) -> JSONRespons
         except Exception:
             ats_gap_raw = {}
 
-    original_score: int = ats_gap_raw.get("score", 0)
+    original_score: int = ats_gap_raw.get("score") or 0
 
     jd_text = job.get("description") or ""
     if not jd_text:
@@ -993,11 +993,11 @@ async def optimize_resume_endpoint(job_id: str, request: Request) -> JSONRespons
         candidate_gap = await loop.run_in_executor(
             None, lambda: check_ats_sync(candidate_resume, jd_text)
         )
-        candidate_score: int = candidate_gap.get("score", 0)
+        candidate_score: int = candidate_gap.get("score") or 0
 
         # Accept if score improved OR only dropped within acceptable margin
-        score_ok = (candidate_score or 0) >= (original_score - _ACCEPTABLE_DROP)
-        if score_ok and candidate_score >= best_score - _ACCEPTABLE_DROP:
+        score_ok = candidate_score >= (original_score - _ACCEPTABLE_DROP)
+        if score_ok and candidate_score >= (best_score or 0) - _ACCEPTABLE_DROP:
             best_resume = candidate_resume
             best_gap = candidate_gap
             best_score = candidate_score
@@ -1546,7 +1546,9 @@ async def _ensure_job_description(job_id: str, job: dict) -> str:
             from company_research import fetch_jd_from_url
             from store import update_job_description as _update_jd
             fetched = await asyncio.to_thread(fetch_jd_from_url, job["url"])
-            if fetched:
+            # Require at least 80 words of meaningful content — login-wall pages
+            # (LinkedIn, etc.) return boilerplate HTML that is useless for ATS scoring
+            if fetched and len(fetched.split()) >= 80:
                 _update_jd(job_id, fetched)
                 return fetched
         except Exception:

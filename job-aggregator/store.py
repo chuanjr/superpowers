@@ -191,6 +191,25 @@ def upsert_jobs(jobs: list[Job]) -> list[Job]:
             existing = conn.execute(
                 "SELECT id FROM jobs WHERE id = ?", (job.id,)
             ).fetchone()
+            if not existing and job.url:
+                # Cross-language URL dedup: same posting may arrive with a different
+                # company name (e.g. 玩美移動 vs "Perfect Corp"). If the URL is already
+                # in the DB under a different id, merge sources into the existing record.
+                from models import _strip_url_params
+                canonical = _strip_url_params(job.url)
+                if canonical:
+                    url_existing = conn.execute(
+                        "SELECT id, sources FROM jobs WHERE url = ? OR url = ?",
+                        (canonical, canonical + "/"),
+                    ).fetchone()
+                    if url_existing:
+                        existing_sources = json.loads(url_existing["sources"] or "[]")
+                        merged = json.dumps(list(set(existing_sources + job.sources)))
+                        conn.execute(
+                            "UPDATE jobs SET last_seen_at = ?, sources = ? WHERE id = ?",
+                            (now, merged, url_existing["id"]),
+                        )
+                        continue  # Don't insert; treat as existing
             if existing:
                 # Update sources (may have merged new platforms) and last_seen_at
                 conn.execute(

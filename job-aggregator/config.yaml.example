@@ -18,6 +18,7 @@ targets:
 sources:
   linkedin_gmail: true
   indeed_gmail: true
+  simplify_gmail: true   # matches@simplify.jobs — "New matches from [company]" emails
   indeed_rss: true
   104: true
   cakeresume: true
