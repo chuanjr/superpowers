@@ -16,6 +16,9 @@ import re as _re
 
 import anthropic
 
+# Minimum word count for a JD to be considered meaningful (below = login-wall / boilerplate)
+_MIN_JD_WORDS = 80
+
 
 def _candidate_name() -> str:
     """Return the candidate's name from config.yaml, falling back to 'the candidate'."""
@@ -356,7 +359,7 @@ def check_ats_sync(resume_raw: str, jd_text: str) -> dict:
         high_freq_missing: list  — keywords appearing 2+ times in JD but not in resume
         safe: bool               — True when score >= 70
     """
-    if len(jd_text.split()) < 80:
+    if len(jd_text.split()) < _MIN_JD_WORDS:
         return {"present": [], "missing": [], "score": None, "no_jd": True,
                 "title_match": None, "required_coverage": None,
                 "high_freq_missing": [], "safe": False}
@@ -641,11 +644,12 @@ def _inject_skills_keywords(rest_block: str, missing_keywords: list[str]) -> str
         "stakeholder management",  # too generic — strips PM signal
     }
 
+    rest_block_lower = rest_block.lower()  # precompute once — used for each keyword check
     safe_keywords = [
         k for k in missing_keywords
         if not any(bad in k.lower() for bad in _reject_patterns)
-        # Also skip if already present (case-insensitive) in the rest block
-        and k.lower() not in rest_block.lower()
+        # Skip if already present — use word-boundary match to avoid "SQL" matching "PostgreSQL"
+        and not _re.search(r'\b' + _re.escape(k) + r'\b', rest_block_lower, _re.IGNORECASE)
     ]
     if not safe_keywords:
         return rest_block

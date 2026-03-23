@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
-from models import Job
+from models import Job, _strip_url_params
 
 DB_PATH = Path("jobs.db")
 
@@ -195,7 +195,6 @@ def upsert_jobs(jobs: list[Job]) -> list[Job]:
                 # Cross-language URL dedup: same posting may arrive with a different
                 # company name (e.g. 玩美移動 vs "Perfect Corp"). If the URL is already
                 # in the DB under a different id, merge sources into the existing record.
-                from models import _strip_url_params
                 canonical = _strip_url_params(job.url)
                 if canonical:
                     url_existing = conn.execute(

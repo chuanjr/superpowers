@@ -1548,7 +1548,8 @@ async def _ensure_job_description(job_id: str, job: dict) -> str:
             fetched = await asyncio.to_thread(fetch_jd_from_url, job["url"])
             # Require at least 80 words of meaningful content — login-wall pages
             # (LinkedIn, etc.) return boilerplate HTML that is useless for ATS scoring
-            if fetched and len(fetched.split()) >= 80:
+            from application_generator import _MIN_JD_WORDS
+            if fetched and len(fetched.split()) >= _MIN_JD_WORDS:
                 _update_jd(job_id, fetched)
                 return fetched
         except Exception:

@@ -132,7 +132,12 @@ def _fetch_gmail(gmail: GmailFetcher, sources: dict, markets: list[str], days_ba
         headers = {h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])}
         sender = headers.get("From", "")
         subject = headers.get("Subject", "")
-        source = "simplify" if "simplify.jobs" in sender else ("linkedin" if "linkedin" in sender else "indeed")
+        if "simplify.jobs" in sender:
+            source = "simplify"
+        elif "linkedin" in sender:
+            source = "linkedin"
+        else:
+            source = "indeed"
         market = _detect_market(sender, subject, markets)
         is_pm_email = "product manager" in subject.lower() or "growth" in subject.lower()
         jobs = parse_gmail_message(html, source=source, market=market, debug=DEBUG and is_pm_email)
