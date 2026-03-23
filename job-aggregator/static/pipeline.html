@@ -630,7 +630,6 @@
       <tr>
         <th>Company / Role</th>
         <th>Market</th>
-        <th>Culture</th>
         <th>Fit Score</th>
         <th>Verdict</th>
         <th>Status</th>
@@ -883,16 +882,6 @@
 
       const tip = e.explanation ? ` title="${escHtml(e.explanation)}"` : '';
 
-      // Culture badge
-      const cs = e.culture_score;
-      const cultureBadge = cs == null
-        ? '<span class="culture-badge" title="Not scored">⚫</span>'
-        : cs >= 70
-          ? `<span class="culture-badge" title="${cs}/100">🟢</span> <span class="culture-score-txt">${cs}</span>`
-          : cs >= 40
-            ? `<span class="culture-badge" title="${cs}/100">🟡</span> <span class="culture-score-txt">${cs}</span>`
-            : `<span class="culture-badge" title="${cs}/100">🔴</span> <span class="culture-score-txt">${cs}</span>`;
-
       return `<tr data-job-id="${escHtml(e.job_id)}">
   <td class="col-company">
     <div class="company-name">
@@ -902,7 +891,6 @@
     <div class="role-name">${escHtml(e.title || '')}</div>
   </td>
   <td>${marketTag}</td>
-  <td>${cultureBadge}</td>
   <td>
     <div class="fit-bar-wrap"${tip}>
       <span class="fit-score">${scoreStr}</span>

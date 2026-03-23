@@ -1,0 +1,28 @@
+NEXT SESSION PRIORITIES (2026-03-23)
+
+1. ATS Optimization Loop
+   - POST /api/pipeline/{job_id}/optimize-resume
+   - Only show "Optimize" button when ats_gap.score < 80
+   - Re-runs generate_ats_resume_sync() + check_ats_sync()
+   - See task_plan.md for full spec
+
+2. Resume Edit → Recheck ATS Score
+   - After user edits ATS resume textarea and clicks Save
+   - POST /api/pipeline/{job_id}/recheck-ats
+   - Score badge updates inline without full page reload
+
+3. Cover Letter Regenerate from ATS Resume
+   - "↺ Regenerate" button in cover letter section of pipeline drawer
+   - POST /api/pipeline/{job_id}/regen-cover-letter
+   - Uses pkg.ats_resume if available, falls back to resume.raw_text
+
+4. PDF Compact Layout (1 page)
+   - server.py download_resume_pdf()
+   - Letter page, 0.5" margins, 11pt/10pt font, shrink if overflow
+
+ENVIRONMENT NOTES:
+- Project root: /Users/chuanjr/job-aggregator/superpowers/job-aggregator/
+- Server: venv/bin/uvicorn server:app --reload
+- DB: jobs.db (~23MB, never commit)
+- Model: claude-sonnet-4-6 (application_generator.py ~line 518, ~1086)
+- Config: config.yaml (gitignored) — candidate.name drives cover letter personalization
