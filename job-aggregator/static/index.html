@@ -479,10 +479,10 @@
 </header>
 
 <!-- ── Gmail Auth Banner ── -->
-<div id="gmail-auth-banner" class="hidden" style="
-  position:fixed;top:0;left:0;right:0;z-index:9999;
+<div id="gmail-auth-banner" style="
+  display:none;position:fixed;top:0;left:0;right:0;z-index:9999;
   background:#fef3c7;border-bottom:2px solid #f59e0b;
-  padding:10px 20px;display:flex;align-items:center;gap:12px;font-size:0.88rem">
+  padding:10px 20px;align-items:center;gap:12px;font-size:0.88rem">
   <span>⚠️ <strong>Gmail token expired</strong> — LinkedIn &amp; Indeed email alerts are not being fetched.</span>
   <button id="gmail-reauth-btn" onclick="reconnectGmail()" style="
     padding:4px 14px;background:#f59e0b;color:#fff;border:none;border-radius:6px;
@@ -1129,7 +1129,7 @@
     btn.disabled = true;
     btn.textContent = '⟳ Updating…';
     // Optimistically hide the banner — will re-show if still failing after this run
-    document.getElementById('gmail-auth-banner').classList.add('hidden');
+    document.getElementById('gmail-auth-banner').style.display = 'none';
     await fetch('/api/jobs/refresh', { method: 'POST' });
     _refreshPoll = setInterval(async () => {
       try {
@@ -1153,7 +1153,7 @@
           if (data.gmail_auth_needed) {
             showGmailAuthBanner();
           } else {
-            document.getElementById('gmail-auth-banner').classList.add('hidden');
+            document.getElementById('gmail-auth-banner').style.display = 'none';
           }
         }
       } catch(e) {}
@@ -1167,13 +1167,13 @@
 
   function hideGmailBanner() {
     _gmailBannerDismissed = true;
-    document.getElementById('gmail-auth-banner').classList.add('hidden');
+    document.getElementById('gmail-auth-banner').style.display = 'none';
   }
 
   function showGmailAuthBanner() {
     // Never re-show if user dismissed or if we already know it's connected
     if (_gmailBannerDismissed) return;
-    document.getElementById('gmail-auth-banner').classList.remove('hidden');
+    document.getElementById('gmail-auth-banner').style.display = 'flex';
   }
 
   // Replace inline onclick on X button with a proper handler
@@ -1202,8 +1202,7 @@
       if (data.ok) {
         btn.textContent = '✓ Connected';
         status.textContent = 'Gmail reconnected!';
-        _gmailBannerDismissed = true;
-        setTimeout(() => hideGmailBanner(), 1500);
+        hideGmailBanner();
       } else {
         btn.disabled = false;
         btn.textContent = '🔗 Reconnect Gmail';
